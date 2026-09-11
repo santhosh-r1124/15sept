@@ -1,0 +1,9 @@
+packages:
+  - "apps/web"
+  - "apps/advocate-portal"
+  - "packages/*"
+
+# Native/postinstall build scripts we explicitly trust (pnpm blocks the rest).
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true

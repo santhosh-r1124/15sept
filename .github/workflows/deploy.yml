@@ -1,0 +1,33 @@
+# Deployment pipeline — PLACEHOLDER (defined in Phase 15).
+#
+# Intended shape:
+#   staging   : auto-deploy on push to main after CI passes
+#   production : manual approval (environment protection rule)
+#
+# Steps per environment:
+#   1. build + push API image to the registry
+#   2. run `alembic upgrade head` against the target Supabase DB (release step)
+#   3. roll the API service
+#   4. deploy frontends to Vercel with matching NEXT_PUBLIC_* env
+#
+# See infrastructure/deployment/README.md and docs/adr/0002-database-provisioning.md.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        required: true
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Deployment pipeline is not implemented yet (Phase 15)."
+          echo "Requested environment: ${{ inputs.environment }}"
+          exit 1

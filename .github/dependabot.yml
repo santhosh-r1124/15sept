@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule: { interval: weekly }
+    groups:
+      js-dev:
+        dependency-type: development
+      js-prod:
+        dependency-type: production
+
+  - package-ecosystem: pip
+    directories:
+      - "/apps/api"
+      - "/services/rag"
+      - "/services/document-processing"
+      - "/services/legal-classifier"
+      - "/services/risk-engine"
+      - "/services/notifications"
+    schedule: { interval: weekly }
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directories:
+      - "/apps/api"
+      - "/apps/web"
+      - "/apps/advocate-portal"
+    schedule: { interval: weekly }

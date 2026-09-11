@@ -1,0 +1,14 @@
+# Normalise line endings: LF in the repo, native on checkout for text files.
+* text=auto eol=lf
+
+# Always LF (executed in Linux containers / CI)
+*.sh   text eol=lf
+*.mjs  text eol=lf
+Dockerfile text eol=lf
+
+# Binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.woff2 binary
