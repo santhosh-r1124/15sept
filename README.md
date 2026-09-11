@@ -8,9 +8,10 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> **Phase 0 (foundation) and Phase 1 (authentication & RBAC) are done.**
-> See [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and status,
-> and [`docs/architecture.md`](docs/architecture.md) for the system design.
+> **Phases 0–2 are done**: foundation, authentication & RBAC, and public legal
+> chat (ungrounded — no retrieval yet). See [`docs/roadmap.md`](docs/roadmap.md)
+> for the full 16-phase plan and status, and
+> [`docs/architecture.md`](docs/architecture.md) for the system design.
 
 ---
 
@@ -82,7 +83,7 @@ pnpm db:migrate
 # 5. Verify
 curl http://localhost:8000/health           # API liveness
 curl http://localhost:8000/health/ready      # API readiness (checks DB + Redis)
-open http://localhost:3000                    # consumer web — /register, /login, /profile
+open http://localhost:3000                    # consumer web — /chat, /register, /login, /profile
 open http://localhost:3001                    # advocate portal — /register, /login, /profile
 open http://localhost:8000/docs               # API OpenAPI docs
 ```
@@ -90,6 +91,11 @@ open http://localhost:8000/docs               # API OpenAPI docs
 Verification/reset emails are logged (not sent) in development — read the link
 out of the API log output. To create an admin account (there's no public
 admin sign-up): `cd apps/api && uv run python -m app.scripts.create_admin --email you@example.com`.
+
+`/chat` needs `ANTHROPIC_API_KEY` set in `apps/api/.env` (unset by default) —
+without it the endpoint returns a clear `503 llm_not_configured` rather than
+guessing. No retrieval grounding yet (Phase 3/4), so treat answers as
+informational, not citation-backed.
 
 ### Running apps individually (without Docker)
 

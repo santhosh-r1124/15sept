@@ -17,3 +17,9 @@ export const INSUFFICIENT_EVIDENCE_MESSAGE =
 /** Appended to responses for HIGH/CRITICAL risk queries (FRD §13). */
 export const ADVOCATE_RECOMMENDATION_MESSAGE =
   'This matter may require advice from a qualified advocate.';
+
+/** Returned in place of a generated answer when the classifier flags is_out_of_scope. */
+export const OUT_OF_SCOPE_MESSAGE =
+  'I can only help with general Indian legal information, document guidance, ' +
+  'and connecting you with an advocate. Could you rephrase your question as a ' +
+  'legal question, or tell me what legal topic you need help with?';

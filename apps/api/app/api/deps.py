@@ -70,6 +70,41 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+async def get_current_user_optional(
+    settings: SettingsDep, db: DbSession, credentials: BearerCredentials
+) -> User | None:
+    """Like :func:`get_current_user`, but returns ``None`` instead of raising.
+
+    For endpoints usable both anonymously and while logged in (public-tier
+    chat) — any bearer token present is still validated; a missing, malformed
+    or invalid one just means "anonymous", not an error.
+    """
+    if credentials is None:
+        return None
+    try:
+        payload = security.decode_token(
+            credentials.credentials, settings=settings, expected_type="access"
+        )
+    except jwt.PyJWTError:
+        return None
+
+    subject = payload.get("sub")
+    if not isinstance(subject, str):
+        return None
+    try:
+        user_id = uuid.UUID(subject)
+    except ValueError:
+        return None
+
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+OptionalUser = Annotated[User | None, Depends(get_current_user_optional)]
+
+
 def require_roles(*roles: UserRole) -> Callable[[User], Awaitable[User]]:
     """Dependency factory: 403s unless the current user has one of ``roles``.
 

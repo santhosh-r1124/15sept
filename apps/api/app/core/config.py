@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # ---- LLM / RAG (Phase 2+) ----------------------------------------
     anthropic_api_key: str | None = None
     llm_model: str = "claude-sonnet-5"
+    llm_max_tokens: int = 1024
+    llm_classifier_max_tokens: int = 300
+    # How many prior messages (user + assistant) to include as context.
+    chat_history_length: int = 10
 
     # ---- Frontend (Phase 1+) ------------------------------------------
     # Base URL used to build links inside emails (verify-email, reset-password).

@@ -40,7 +40,19 @@ shape; components fill in over later phases.
                     Anthropic Claude  +  verified Indian legal sources
 ```
 
-## 2. Request/response flow (from Phase 4)
+## 2. Request/response flow
+
+**Phase 2 (current, `apps/api/app/services/llm.py`)** — no retrieval yet:
+
+```
+query → classify (Claude, forced tool call: category, jurisdiction, in/out of scope)
+      → if out of scope: fixed reply, stop
+      → else: Claude generates a general answer, told to defer to an advocate
+              rather than invent specifics
+```
+
+**Target, from Phase 4** — adds real grounding and moves classification into a
+standalone service:
 
 ```
 query

@@ -7,7 +7,7 @@ deliverable and builds on the previous one.
 | ----- | ----------------------------- | ---------------------------------------------------------------- | ------ |
 | 0     | Architecture                  | Running production-style skeleton: frontend + backend + database | ✅ Done |
 | 1     | Authentication                | Full auth + RBAC (CONSUMER, ADVOCATE, ADMIN, LEGAL_ADMIN, ENTERPRISE_USER) | ✅ Done |
-| 2     | Public AI Chat                | Working public Indian legal-information chatbot                   | ⬜ Not started |
+| 2     | Public AI Chat                | Working public Indian legal-information chatbot                   | ✅ Done (no retrieval grounding yet — see below) |
 | 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ⬜ Not started |
 | 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ⬜ Not started |
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ⬜ Not started |
@@ -36,6 +36,26 @@ deliverable and builds on the previous one.
   logout). RBAC via `require_roles(...)` dependency.
 - Frontend: `apps/web` has `/register /login /verify-email /reset-password
   /profile`; `apps/advocate-portal` has `/register /login /profile`.
+
+## Phase 2 — what shipped
+
+- `POST /api/v1/chat/messages` — works anonymously (Tier 1 / public, per the
+  FRD) or logged in. One Claude call classifies the message (legal category,
+  jurisdiction scope, in/out of scope), a second generates the answer only if
+  in scope; out-of-scope messages get a fixed reply without a second call.
+- Conversations + messages persisted in Postgres (`conversations`,
+  `chat_messages`); anonymous threads are addressable by ID, logged-in threads
+  are also listable (`GET /chat/conversations`) and ownership-checked.
+- **No retrieval grounding yet** — deliberately deferred to Phase 3
+  (ingestion) / Phase 4 (RAG). The system prompt instructs the model to defer
+  to an advocate rather than invent specifics, which is the closest honest
+  stand-in until real sources exist; treat pre-Phase-4 answers as informational
+  only, not citation-backed.
+- Requires `ANTHROPIC_API_KEY` (`apps/api/.env`) — unset by design until you
+  add one; the endpoint 503s with a clear `llm_not_configured` error until then.
+- Frontend: `apps/web` gets `/chat` — message thread, suggested questions
+  (the FRD's example queries), new-conversation, and (when logged in) a
+  history panel. Mandatory disclaimer shown on every page.
 
 ## MVP scope (Phase 16)
 

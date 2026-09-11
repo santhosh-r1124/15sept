@@ -13,6 +13,9 @@ export function SiteHeader() {
           Legal Advisor
         </Link>
         <nav className="flex items-center gap-4">
+          <Link href="/chat" className="text-slate-600 hover:text-slate-900">
+            Chat
+          </Link>
           {loading ? null : user ? (
             <Link href="/profile" className="text-slate-600 hover:text-slate-900">
               {user.display_name || user.email}

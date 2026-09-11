@@ -16,18 +16,20 @@ app/
 │   ├── base.py          # SQLAlchemy DeclarativeBase + naming convention
 │   └── session.py       # async engine + sessionmaker lifecycle
 ├── models/
-│   └── user.py           # User, AdvocateProfile, *Token tables (Phase 1)
-├── schemas/              # Pydantic request/response models (auth, user, advocate, admin)
+│   ├── user.py            # User, AdvocateProfile, *Token tables (Phase 1)
+│   └── chat.py            # Conversation, ChatMessage (Phase 2)
+├── schemas/              # Pydantic request/response models (auth, user, advocate, admin, chat)
 ├── middleware/
 │   └── request_context.py  # request-id, structured access log, timing
 ├── services/
 │   ├── redis.py          # async Redis client lifecycle
 │   ├── email.py          # EmailSender abstraction (dev: logs; Phase 11: real provider)
-│   └── tokens.py          # issue + persist an access/refresh token pair
+│   ├── tokens.py          # issue + persist an access/refresh token pair
+│   └── llm.py             # Claude: query classification + answer generation (Phase 2)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
-    ├── deps.py            # get_db, get_redis, get_current_user, require_roles(...)
+    ├── deps.py            # get_db, get_redis, get_current_user(_optional), require_roles(...)
     └── v1/
         ├── router.py       # /api/v1 aggregate router
         └── routes/
@@ -36,7 +38,8 @@ app/
             ├── auth.py       # register/login/refresh/logout, verify email, password reset
             ├── users.py      # GET/PATCH /api/v1/users/me
             ├── advocates.py  # advocate self-registration + own-profile
-            └── admin.py      # user list/suspend, advocate verification queue (RBAC)
+            ├── admin.py      # user list/suspend, advocate verification queue (RBAC)
+            └── chat.py       # send message (anon or logged in), list/get conversations
 ```
 
 ## Develop
@@ -69,6 +72,20 @@ token from `/auth/register` or `/auth/login` to call protected routes.
   wires a real provider behind `app/services/email.py::EmailSender`. Read the
   link out of the API's log output in development.
 
+## Chat (Phase 2)
+
+`POST /api/v1/chat/messages` works with or without a bearer token (public
+tier). One Claude call classifies the message (`app/services/llm.py::classify_query`
+— legal category, jurisdiction scope, in/out of scope); a second call
+generates the answer only when in scope. **No retrieval grounding yet** —
+that's `services/document-processing` (Phase 3) and `services/rag` (Phase 4);
+the system prompt instructs the model to defer to an advocate rather than
+invent specifics in the meantime.
+
+Requires `ANTHROPIC_API_KEY` in `apps/api/.env` — unset by default. Without
+it the endpoint returns `503 {"error": {"code": "llm_not_configured"}}`
+rather than failing silently or guessing.
+
 ## Migrations (Alembic)
 
 ```bash
@@ -80,8 +97,8 @@ uv run alembic downgrade -1                        # roll back one
 Alembic reads `DATABASE_URL_SYNC` (psycopg driver). Autogenerate compares
 `app.db.base.Base.metadata` against the live DB, so every model module must be
 imported in `app/models/__init__.py`. Hand-written migrations that use a
-Postgres native enum (`user_role`, `verification_status`) follow the
-`create_type=False` + explicit `.create()`/`.drop()` pattern — see
+Postgres native enum (`user_role`, `verification_status`, `message_role`)
+follow the `create_type=False` + explicit `.create()`/`.drop()` pattern — see
 `migrations/versions/20260102_0000-0002_auth_tables.py`.
 
 ## Testing

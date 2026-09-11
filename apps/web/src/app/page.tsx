@@ -1,9 +1,9 @@
 import { MANDATORY_DISCLAIMER } from '@legal-platform/shared';
+import Link from 'next/link';
 import { SystemStatus } from '@/components/system-status';
 import { env } from '@/lib/env';
 
 const PHASES = [
-  { n: 2, label: 'Public Legal AI Chat' },
   { n: 3, label: 'Indian Legal Knowledge Base' },
   { n: 6, label: 'Legal Document Assistant' },
   { n: 7, label: 'Advocate Marketplace' },
@@ -15,7 +15,7 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-16">
       <header className="flex flex-col gap-2">
         <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-          Phase 0 · Foundation skeleton · {env.NEXT_PUBLIC_APP_ENV}
+          Phase 2 · Public legal AI chat · {env.NEXT_PUBLIC_APP_ENV}
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">
           Indian Legal Advisor Bot &amp; Advocate Connect
@@ -24,6 +24,12 @@ export default function HomePage() {
           AI-grounded legal information over verified Indian sources, with a path to qualified
           advocates when a matter needs professional help.
         </p>
+        <Link
+          href="/chat"
+          className="mt-2 w-fit rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+        >
+          Ask a legal question →
+        </Link>
       </header>
 
       <SystemStatus />

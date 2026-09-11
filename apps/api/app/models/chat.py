@@ -1,0 +1,74 @@
+"""Conversation + chat message ORM models (Phase 2)."""
+
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base, TimestampMixin
+
+
+class MessageRole(enum.StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class Conversation(TimestampMixin, Base):
+    """A chat thread. ``user_id`` is null for anonymous (public-tier) chats."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    # Derived from the first message; None until the first message lands.
+    title: Mapped[str | None] = mapped_column(String(200))
+
+    messages: Mapped[list[ChatMessage]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
+    )
+
+    __table_args__ = (Index("ix_conversations_user_id", "user_id"),)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"Conversation(id={self.id!s}, user_id={self.user_id!s})"
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[MessageRole] = mapped_column(
+        SAEnum(MessageRole, name="message_role", native_enum=True), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Set on the user's message only — the outcome of app.services.llm.classify_query.
+    legal_category: Mapped[str | None] = mapped_column(String(30))
+    jurisdiction_scope: Mapped[str | None] = mapped_column(String(30))
+    is_out_of_scope: Mapped[bool | None] = mapped_column(Boolean)
+
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+    __table_args__ = (Index("ix_chat_messages_conversation_id", "conversation_id"),)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"ChatMessage(id={self.id!s}, role={self.role}, conv={self.conversation_id!s})"

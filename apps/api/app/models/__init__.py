@@ -7,6 +7,7 @@ Alembic autogenerate (see ``migrations/env.py``).
 from __future__ import annotations
 
 from app.db.base import Base
+from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.user import (
     AdvocateProfile,
     EmailVerificationToken,
@@ -20,7 +21,10 @@ from app.models.user import (
 __all__ = [
     "AdvocateProfile",
     "Base",
+    "ChatMessage",
+    "Conversation",
     "EmailVerificationToken",
+    "MessageRole",
     "PasswordResetToken",
     "RefreshToken",
     "User",
