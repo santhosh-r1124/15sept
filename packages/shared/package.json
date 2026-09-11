@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./legal": "./src/legal.ts",
     "./roles": "./src/roles.ts",
-    "./api": "./src/api.ts"
+    "./api": "./src/api.ts",
+    "./advocate": "./src/advocate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -10,22 +10,33 @@ app/
 ├── core/
 │   ├── config.py        # pydantic-settings — typed env config + Environment
 │   ├── logging.py       # structlog setup (console dev / JSON prod)
-│   └── errors.py        # AppError hierarchy + handlers + error envelope
+│   ├── errors.py        # AppError hierarchy + handlers + error envelope
+│   └── security.py      # password hashing, one-time tokens, JWT access/refresh
 ├── db/
 │   ├── base.py          # SQLAlchemy DeclarativeBase + naming convention
 │   └── session.py       # async engine + sessionmaker lifecycle
-├── models/              # ORM models (populated from Phase 1)
+├── models/
+│   └── user.py           # User, AdvocateProfile, *Token tables (Phase 1)
+├── schemas/              # Pydantic request/response models (auth, user, advocate, admin)
 ├── middleware/
 │   └── request_context.py  # request-id, structured access log, timing
 ├── services/
-│   └── redis.py         # async Redis client lifecycle
+│   ├── redis.py          # async Redis client lifecycle
+│   ├── email.py          # EmailSender abstraction (dev: logs; Phase 11: real provider)
+│   └── tokens.py          # issue + persist an access/refresh token pair
+├── scripts/
+│   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
-    ├── deps.py          # FastAPI dependencies (get_db, get_redis)
+    ├── deps.py            # get_db, get_redis, get_current_user, require_roles(...)
     └── v1/
-        ├── router.py    # /api/v1 aggregate router
+        ├── router.py       # /api/v1 aggregate router
         └── routes/
-            ├── health.py  # /health, /health/ready
-            └── meta.py    # /api/v1/meta
+            ├── health.py    # /health, /health/ready
+            ├── meta.py       # /api/v1/meta
+            ├── auth.py       # register/login/refresh/logout, verify email, password reset
+            ├── users.py      # GET/PATCH /api/v1/users/me
+            ├── advocates.py  # advocate self-registration + own-profile
+            └── admin.py      # user list/suspend, advocate verification queue (RBAC)
 ```
 
 ## Develop
@@ -36,7 +47,27 @@ cp .env.example .env
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Open <http://localhost:8000/docs>.
+Open <http://localhost:8000/docs> — click **Authorize** and paste an access
+token from `/auth/register` or `/auth/login` to call protected routes.
+
+## Auth model (Phase 1)
+
+- Access tokens: short-lived JWTs (`ACCESS_TOKEN_TTL_MINUTES`), verified by
+  signature only.
+- Refresh tokens: JWTs with a `jti`, hashed and stored in `refresh_tokens` so
+  they can be revoked (logout) and are rotated (single-use) on every
+  `/auth/refresh` call.
+- RBAC: `Depends(require_roles(UserRole.ADMIN, UserRole.LEGAL_ADMIN))` — see
+  `app/api/v1/routes/admin.py` for the pattern.
+- No public admin-registration endpoint. Bootstrap the first admin with:
+
+  ```bash
+  uv run python -m app.scripts.create_admin --email you@example.com
+  ```
+
+- Emails (verification, password reset) are logged, not sent, until Phase 11
+  wires a real provider behind `app/services/email.py::EmailSender`. Read the
+  link out of the API's log output in development.
 
 ## Migrations (Alembic)
 
@@ -48,7 +79,28 @@ uv run alembic downgrade -1                        # roll back one
 
 Alembic reads `DATABASE_URL_SYNC` (psycopg driver). Autogenerate compares
 `app.db.base.Base.metadata` against the live DB, so every model module must be
-imported in `app/models/__init__.py`.
+imported in `app/models/__init__.py`. Hand-written migrations that use a
+Postgres native enum (`user_role`, `verification_status`) follow the
+`create_type=False` + explicit `.create()`/`.drop()` pattern — see
+`migrations/versions/20260102_0000-0002_auth_tables.py`.
+
+## Testing
+
+Two fixtures, in `tests/conftest.py`:
+
+- `client` — no database. Use for anything that never reaches a DB session
+  (health checks, "missing/invalid token" RBAC cases).
+- `db_client` — every request runs inside one outer transaction that's rolled
+  back after the test, so tests are isolated and never leave rows behind.
+  **Skips automatically** if Postgres isn't reachable — start it first with
+  `pnpm stack:up` (repo root) to actually run these.
+
+```bash
+uv run pytest -q             # unit + RBAC tests always run; DB tests skip without Postgres
+pnpm stack:up                # from repo root — brings up Postgres + Redis
+uv run alembic upgrade head
+uv run pytest -q             # now the full suite runs
+```
 
 ## Quality gates
 

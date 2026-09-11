@@ -17,6 +17,8 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Abort the request after this many ms (default 10_000). */
   timeoutMs?: number;
+  /** Sets `Authorization: Bearer <token>` when provided. */
+  token?: string | null;
 }
 
 /**
@@ -24,7 +26,7 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
  * envelope into {@link ApiRequestError}.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, timeoutMs = 10_000, headers, ...rest } = options;
+  const { body, timeoutMs = 10_000, headers, token, ...rest } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -36,6 +38,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       headers: {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,

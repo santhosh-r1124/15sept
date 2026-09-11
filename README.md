@@ -8,9 +8,9 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> This repository is at **Phase 0 — Product Foundation & Architecture**.
-> See [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and
-> [`docs/architecture.md`](docs/architecture.md) for the system design.
+> **Phase 0 (foundation) and Phase 1 (authentication & RBAC) are done.**
+> See [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and status,
+> and [`docs/architecture.md`](docs/architecture.md) for the system design.
 
 ---
 
@@ -82,10 +82,14 @@ pnpm db:migrate
 # 5. Verify
 curl http://localhost:8000/health           # API liveness
 curl http://localhost:8000/health/ready      # API readiness (checks DB + Redis)
-open http://localhost:3000                    # consumer web
-open http://localhost:3001                    # advocate portal
+open http://localhost:3000                    # consumer web — /register, /login, /profile
+open http://localhost:3001                    # advocate portal — /register, /login, /profile
 open http://localhost:8000/docs               # API OpenAPI docs
 ```
+
+Verification/reset emails are logged (not sent) in development — read the link
+out of the API log output. To create an admin account (there's no public
+admin sign-up): `cd apps/api && uv run python -m app.scripts.create_admin --email you@example.com`.
 
 ### Running apps individually (without Docker)
 

@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 30
     refresh_token_ttl_days: int = 14
+    email_verification_ttl_hours: int = 24
+    password_reset_ttl_hours: int = 1
 
     # ---- CORS ------------------------------------------------------
     # ``NoDecode`` stops pydantic-settings from JSON-parsing the env value; the
@@ -88,6 +90,10 @@ class Settings(BaseSettings):
     # ---- LLM / RAG (Phase 2+) ----------------------------------------
     anthropic_api_key: str | None = None
     llm_model: str = "claude-sonnet-5"
+
+    # ---- Frontend (Phase 1+) ------------------------------------------
+    # Base URL used to build links inside emails (verify-email, reset-password).
+    frontend_base_url: str = "http://localhost:3000"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

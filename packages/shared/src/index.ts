@@ -10,3 +10,4 @@ export * from './legal';
 export * from './roles';
 export * from './api';
 export * from './disclaimer';
+export * from './advocate';
