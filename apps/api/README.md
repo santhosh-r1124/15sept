@@ -17,15 +17,17 @@ app/
 │   └── session.py       # async engine + sessionmaker lifecycle
 ├── models/
 │   ├── user.py            # User, AdvocateProfile, *Token tables (Phase 1)
-│   └── chat.py            # Conversation, ChatMessage (Phase 2)
-├── schemas/              # Pydantic request/response models (auth, user, advocate, admin, chat)
+│   ├── chat.py            # Conversation, ChatMessage (Phase 2)
+│   └── legal_document.py   # LegalDocument, LegalChunk (pgvector) (Phase 3)
+├── schemas/              # Pydantic request/response models (auth, user, advocate, admin, chat, legal_source)
 ├── middleware/
 │   └── request_context.py  # request-id, structured access log, timing
 ├── services/
 │   ├── redis.py          # async Redis client lifecycle
 │   ├── email.py          # EmailSender abstraction (dev: logs; Phase 11: real provider)
 │   ├── tokens.py          # issue + persist an access/refresh token pair
-│   └── llm.py             # Claude: query classification + answer generation (Phase 2)
+│   ├── llm.py             # Claude: query classification + answer generation (Phase 2)
+│   └── ingestion/         # fetch/extract/clean/chunk/embed/search (Phase 3)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
@@ -39,7 +41,8 @@ app/
             ├── users.py      # GET/PATCH /api/v1/users/me
             ├── advocates.py  # advocate self-registration + own-profile
             ├── admin.py      # user list/suspend, advocate verification queue (RBAC)
-            └── chat.py       # send message (anon or logged in), list/get conversations
+            ├── chat.py       # send message (anon or logged in), list/get conversations
+            └── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
 ```
 
 ## Develop
@@ -86,6 +89,31 @@ Requires `ANTHROPIC_API_KEY` in `apps/api/.env` — unset by default. Without
 it the endpoint returns `503 {"error": {"code": "llm_not_configured"}}`
 rather than failing silently or guessing.
 
+## Legal knowledge base / ingestion (Phase 3)
+
+`app/services/ingestion/` — fetch (HTTP) → extract (PDF/HTML) → clean →
+chunk (size-based sliding window) → embed (Gemini) → persist (pgvector).
+Driven by `/api/v1/admin/legal-sources/*` (RBAC — ADMIN/LEGAL_ADMIN):
+
+| Method & path                              | Does |
+| ------------------------------------------- | ---- |
+| `POST /admin/legal-sources`                 | Ingest a new source (runs synchronously) |
+| `GET /admin/legal-sources`                  | List, filter by `document_type`/`status` |
+| `GET /admin/legal-sources/search?q=`        | Semantic search (pgvector cosine) |
+| `GET /admin/legal-sources/{id}`             | Get one |
+| `POST /admin/legal-sources/{id}/reindex`    | Re-fetch + re-chunk, replacing chunks |
+| `DELETE /admin/legal-sources/{id}`          | Remove (cascades chunks) |
+
+Ingestion failures (bad URL, extraction error, embeddings not configured) are
+recorded on the `LegalDocument` row (`ingestion_status=FAILED`,
+`ingestion_error=...`) rather than raised — see it via `GET .../{id}`.
+
+Requires `GEMINI_API_KEY` in `apps/api/.env` (Google AI Studio, free tier) —
+unset by default, same pattern as `ANTHROPIC_API_KEY`. `section`/`article`
+chunk metadata is not populated yet (dropped as unreliable against real
+PDF-extracted text — see
+[`docs/adr/0006-chunking-strategy.md`](../../docs/adr/0006-chunking-strategy.md)).
+
 ## Migrations (Alembic)
 
 ```bash
@@ -97,9 +125,13 @@ uv run alembic downgrade -1                        # roll back one
 Alembic reads `DATABASE_URL_SYNC` (psycopg driver). Autogenerate compares
 `app.db.base.Base.metadata` against the live DB, so every model module must be
 imported in `app/models/__init__.py`. Hand-written migrations that use a
-Postgres native enum (`user_role`, `verification_status`, `message_role`)
-follow the `create_type=False` + explicit `.create()`/`.drop()` pattern — see
-`migrations/versions/20260102_0000-0002_auth_tables.py`.
+Postgres native enum (`user_role`, `verification_status`, `message_role`,
+`legal_document_type`, `ingestion_status`) follow the `create_type=False` +
+explicit `.create()`/`.drop()` pattern — see
+`migrations/versions/20260102_0000-0002_auth_tables.py`. The `legal_chunks`
+table adds a `pgvector` column (`Vector(768)`, from the `pgvector` package)
+plus a raw-SQL HNSW cosine index — see
+`migrations/versions/20260104_0000-0004_legal_sources.py`.
 
 ## Testing
 

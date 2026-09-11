@@ -95,6 +95,20 @@ class Settings(BaseSettings):
     # How many prior messages (user + assistant) to include as context.
     chat_history_length: int = 10
 
+    # ---- Embeddings / knowledge base (Phase 3+) ------------------------
+    # Google AI Studio key — free tier, no billing account required. Chosen
+    # over paid embedding providers (Voyage/OpenAI) to keep the platform
+    # runnable at zero cost; swap providers later by re-embedding.
+    gemini_api_key: str | None = None
+    embedding_model: str = "gemini-embedding-001"
+    # gemini-embedding-001 supports Matryoshka truncation down from 3072;
+    # 768 is Google's recommended efficiency/quality tradeoff point. Changing
+    # this requires a new migration (the pgvector column dimension is fixed).
+    embedding_dimensions: int = 768
+    ingestion_max_source_bytes: int = 25 * 1024 * 1024
+    ingestion_chunk_max_chars: int = 1500
+    ingestion_chunk_overlap_chars: int = 200
+
     # ---- Frontend (Phase 1+) ------------------------------------------
     # Base URL used to build links inside emails (verify-email, reset-password).
     frontend_base_url: str = "http://localhost:3000"

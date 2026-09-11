@@ -8,10 +8,12 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> **Phases 0–2 are done**: foundation, authentication & RBAC, and public legal
-> chat (ungrounded — no retrieval yet). See [`docs/roadmap.md`](docs/roadmap.md)
-> for the full 16-phase plan and status, and
-> [`docs/architecture.md`](docs/architecture.md) for the system design.
+> **Phases 0–3 are done**: foundation, authentication & RBAC, public legal chat
+> (ungrounded — no retrieval yet), and the legal knowledge-base ingestion
+> pipeline (built + validated against real Acts; not yet wired into chat, and
+> no bulk corpus loaded). See [`docs/roadmap.md`](docs/roadmap.md) for the
+> full 16-phase plan and status, and [`docs/architecture.md`](docs/architecture.md)
+> for the system design.
 
 ---
 
@@ -23,9 +25,11 @@ legal-platform/
 │   ├── web/                 # Next.js — consumer web app (chat, docs, advocate search)
 │   ├── api/                 # FastAPI — core backend API (Python, SQLAlchemy, Alembic)
 │   └── advocate-portal/     # Next.js — advocate dashboard
-├── services/                # Python domain services (wired in later phases)
+├── services/                # Python domain services — stubs for now; real
+│   │                        # logic lives in apps/api/app/services/ until the
+│   │                        # Docker build context is repo-root (docs/adr/0004)
 │   ├── rag/                 # Phase 4 — retrieval + generation pipeline
-│   ├── document-processing/ # Phase 3 — ingestion, extraction, chunking, embeddings
+│   ├── document-processing/ # Phase 3 — real impl: apps/api/app/services/ingestion/
 │   ├── legal-classifier/    # Phase 5 — query category classification
 │   ├── risk-engine/         # Phase 5 — LOW/MEDIUM/HIGH/CRITICAL risk scoring
 │   └── notifications/       # Phase 11 — email / SMS / in-app fan-out
@@ -50,6 +54,7 @@ legal-platform/
 | Migrations       | Alembic (schema owned by `apps/api`)                     |
 | Logging          | `structlog` (console in dev, JSON in staging/prod)       |
 | LLM              | Anthropic Claude                                         |
+| Embeddings       | Google Gemini (`gemini-embedding-001`, free tier)         |
 | JS monorepo      | pnpm workspaces + Turborepo                              |
 | Python packaging | `uv`                                                     |
 | CI               | GitHub Actions (`.github/workflows/ci.yml`)              |
@@ -92,10 +97,13 @@ Verification/reset emails are logged (not sent) in development — read the link
 out of the API log output. To create an admin account (there's no public
 admin sign-up): `cd apps/api && uv run python -m app.scripts.create_admin --email you@example.com`.
 
-`/chat` needs `ANTHROPIC_API_KEY` set in `apps/api/.env` (unset by default) —
-without it the endpoint returns a clear `503 llm_not_configured` rather than
-guessing. No retrieval grounding yet (Phase 3/4), so treat answers as
-informational, not citation-backed.
+`/chat` needs `ANTHROPIC_API_KEY`, and legal-source ingestion
+(`/api/v1/admin/legal-sources`) needs `GEMINI_API_KEY` — both in
+`apps/api/.env`, both unset by default. Without them the relevant endpoint
+returns a clear `503`/`FAILED` (`llm_not_configured` /
+`embeddings_not_configured`) rather than guessing. Chat has no retrieval
+grounding yet (that's Phase 4), so treat its answers as informational, not
+citation-backed.
 
 ### Running apps individually (without Docker)
 

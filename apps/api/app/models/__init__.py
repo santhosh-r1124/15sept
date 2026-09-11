@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.db.base import Base
 from app.models.chat import ChatMessage, Conversation, MessageRole
+from app.models.legal_document import DocumentType, IngestionStatus, LegalChunk, LegalDocument
 from app.models.user import (
     AdvocateProfile,
     EmailVerificationToken,
@@ -23,7 +24,11 @@ __all__ = [
     "Base",
     "ChatMessage",
     "Conversation",
+    "DocumentType",
     "EmailVerificationToken",
+    "IngestionStatus",
+    "LegalChunk",
+    "LegalDocument",
     "MessageRole",
     "PasswordResetToken",
     "RefreshToken",

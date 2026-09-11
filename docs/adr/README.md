@@ -9,6 +9,9 @@ decision, numbered sequentially. Status: `Proposed` → `Accepted` →
 | 0001 | Monorepo tooling               | Accepted |
 | 0002 | Database provisioning          | Accepted |
 | 0003 | Schema ownership and migrations | Accepted |
+| 0004 | Domain logic lives in apps/api, not services/* (for now) | Accepted |
+| 0005 | Embedding provider: Gemini (free tier)      | Accepted |
+| 0006 | Chunking strategy: plain sliding window, no heading detection | Accepted |
 
 ## Template
 

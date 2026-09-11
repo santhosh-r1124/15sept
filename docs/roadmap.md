@@ -8,7 +8,7 @@ deliverable and builds on the previous one.
 | 0     | Architecture                  | Running production-style skeleton: frontend + backend + database | ✅ Done |
 | 1     | Authentication                | Full auth + RBAC (CONSUMER, ADVOCATE, ADMIN, LEGAL_ADMIN, ENTERPRISE_USER) | ✅ Done |
 | 2     | Public AI Chat                | Working public Indian legal-information chatbot                   | ✅ Done (no retrieval grounding yet — see below) |
-| 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ⬜ Not started |
+| 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ✅ Done (pipeline + storage; bulk corpus population is follow-up) |
 | 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ⬜ Not started |
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ⬜ Not started |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ⬜ Not started |
@@ -56,6 +56,35 @@ deliverable and builds on the previous one.
 - Frontend: `apps/web` gets `/chat` — message thread, suggested questions
   (the FRD's example queries), new-conversation, and (when logged in) a
   history panel. Mandatory disclaimer shown on every page.
+
+## Phase 3 — what shipped
+
+- Ingestion pipeline (`apps/api/app/services/ingestion/`): fetch (HTTP, 25 MB
+  cap) → extract (PDF via pypdf, HTML via BeautifulSoup) → clean (whitespace,
+  page-number lines, Unicode noise) → chunk (size-based sliding window,
+  ~1500 chars, 200 overlap) → embed (Gemini, free tier) → persist (pgvector,
+  HNSW cosine index).
+- `legal_documents` + `legal_chunks` tables track ingestion status
+  (PENDING/PROCESSING/COMPLETED/FAILED) and the failure reason — one bad
+  source never 500s the request.
+- Admin API (`/api/v1/admin/legal-sources/*`, RBAC-gated): ingest, list,
+  get, delete, re-index, and semantic search. No UI yet — that's Phase 12;
+  usable now via `/docs`.
+- Requires `GEMINI_API_KEY` (`apps/api/.env`) — unset by design, same
+  "build now, key later" pattern as Phase 2; ingestion records a FAILED
+  status with `embeddings_not_configured` until you add one.
+- **`section`/`article` metadata is not populated** — an early attempt at
+  heading-detection proved unreliable against real PDF-extracted text and
+  was dropped; see
+  [`docs/adr/0006-chunking-strategy.md`](adr/0006-chunking-strategy.md).
+- **No documents are pre-loaded.** The roadmap's "initial knowledge base"
+  (IT Act, DPDP Act, Companies Act, etc.) is a bulk-ingestion follow-up, not
+  done in this pass — the pipeline was validated by actually fetching and
+  processing the real IT Act 2000 and DPDP Act 2023 PDFs during development
+  (that's also how the chunking bug in the ADR above was found), not by
+  populating the repository.
+- Chat (Phase 2) is **not yet wired to this** — that integration (hybrid
+  search, reranking, cited answers) is Phase 4.
 
 ## MVP scope (Phase 16)
 
