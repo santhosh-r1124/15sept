@@ -267,6 +267,24 @@ function MessageBubble({ message }: { message: ChatMessageOut | null }) {
         }`}
       >
         {message.content}
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <ol className="mt-2 space-y-0.5 border-t border-slate-200 pt-2 text-xs text-slate-500">
+            {message.sources.map((s, i) => (
+              <li key={`${s.document_id}-${i}`}>
+                [{i + 1}]{' '}
+                <a
+                  href={s.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-blue-700"
+                >
+                  {s.document_title}
+                  {s.section ? `, Section ${s.section}` : ''}
+                </a>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );

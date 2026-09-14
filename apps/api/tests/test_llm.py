@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from app.core.config import Settings
 from app.core.errors import ServiceUnavailableError
 from app.services import llm
+from app.services.rag.retrieval import RetrievedChunk
 
 UNCONFIGURED = Settings(anthropic_api_key=None)
 CONFIGURED = Settings(anthropic_api_key="fake-key-for-tests")
+
+SAMPLE_CHUNK = RetrievedChunk(
+    chunk_id=uuid.uuid4(),
+    document_id=uuid.uuid4(),
+    document_title="Information Technology Act, 2000",
+    source_url="https://example.test/it-act",
+    section="43A",
+    article=None,
+    content="A body corporate handling sensitive personal data must implement "
+    "reasonable security practices.",
+)
 
 
 class _FakeToolUseBlock:
@@ -67,9 +81,11 @@ async def test_classify_query_raises_when_not_configured() -> None:
     assert exc_info.value.status_code == 503
 
 
-async def test_generate_answer_raises_when_not_configured() -> None:
+async def test_generate_grounded_answer_raises_when_not_configured() -> None:
     with pytest.raises(ServiceUnavailableError) as exc_info:
-        await llm.generate_answer("hello", history=[], settings=UNCONFIGURED)
+        await llm.generate_grounded_answer(
+            "hello", history=[], context=[SAMPLE_CHUNK], settings=UNCONFIGURED
+        )
     assert exc_info.value.code == "llm_not_configured"
 
 
@@ -137,20 +153,55 @@ async def test_classify_query_wraps_transport_errors(monkeypatch: pytest.MonkeyP
     assert exc_info.value.code == "llm_error"
 
 
-async def test_generate_answer_joins_text_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_generate_grounded_answer_joins_text_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
     response = _FakeResponse([_FakeTextBlock("Hello "), _FakeTextBlock("there.")])
     monkeypatch.setattr(llm, "_client", lambda settings: _FakeClient(response))
 
-    text = await llm.generate_answer("hi", history=[], settings=CONFIGURED)
+    text = await llm.generate_grounded_answer(
+        "hi", history=[], context=[SAMPLE_CHUNK], settings=CONFIGURED
+    )
 
     assert text == "Hello \nthere."
 
 
-async def test_generate_answer_has_a_fallback_for_empty_response(
+async def test_generate_grounded_answer_has_a_fallback_for_empty_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(llm, "_client", lambda settings: _FakeClient(_FakeResponse([])))
 
-    text = await llm.generate_answer("hi", history=[], settings=CONFIGURED)
+    text = await llm.generate_grounded_answer(
+        "hi", history=[], context=[SAMPLE_CHUNK], settings=CONFIGURED
+    )
 
     assert text  # non-empty fallback copy, not a blank string
+
+
+async def test_generate_grounded_answer_includes_numbered_sources_in_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturingMessages:
+        async def create(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return _FakeResponse([_FakeTextBlock("Answer with a citation [1].")])
+
+    class _CapturingClient:
+        def __init__(self) -> None:
+            self.messages = _CapturingMessages()
+
+    monkeypatch.setattr(llm, "_client", lambda settings: _CapturingClient())
+
+    await llm.generate_grounded_answer(
+        "What security practices are required?",
+        history=[],
+        context=[SAMPLE_CHUNK],
+        settings=CONFIGURED,
+    )
+
+    messages = captured["messages"]
+    assert isinstance(messages, list)
+    prompt = messages[-1]["content"]
+    assert "[1]" in prompt
+    assert SAMPLE_CHUNK.document_title in prompt
+    assert SAMPLE_CHUNK.content in prompt

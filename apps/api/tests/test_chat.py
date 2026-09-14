@@ -1,19 +1,24 @@
 """Integration tests for the chat endpoints. Needs Postgres — see conftest.db_client.
 
-The LLM calls themselves are monkeypatched (app.services.llm.classify_query /
-generate_answer) so these test persistence, RBAC/ownership and routing logic
-without needing a real ANTHROPIC_API_KEY or network access. One test
+The LLM and retrieval calls are monkeypatched (app.services.llm.classify_query /
+generate_grounded_answer, app.services.rag.retrieval.hybrid_search) so these
+test persistence, RBAC/ownership and routing logic without needing a real
+ANTHROPIC_API_KEY, GEMINI_API_KEY, or network access. One test
 (`test_send_message_without_api_key_returns_503`) deliberately does NOT patch
 anything, to prove the real "not configured" path works end-to-end.
 """
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
-from app.core.legal_text import OUT_OF_SCOPE_MESSAGE
+from app.core.legal_text import INSUFFICIENT_EVIDENCE_MESSAGE, OUT_OF_SCOPE_MESSAGE
 from app.services import llm as llm_module
+from app.services.rag import retrieval as retrieval_module
+from app.services.rag.retrieval import RetrievedChunk
 from tests.conftest import unique_email
 
 IT_LAW_CLASSIFICATION = llm_module.Classification(
@@ -22,27 +27,47 @@ IT_LAW_CLASSIFICATION = llm_module.Classification(
 OUT_OF_SCOPE_CLASSIFICATION = llm_module.Classification(
     category="OUT_OF_SCOPE", jurisdiction_scope="UNKNOWN", is_out_of_scope=True
 )
+FAKE_CHUNK = RetrievedChunk(
+    chunk_id=uuid.uuid4(),
+    document_id=uuid.uuid4(),
+    document_title="Test Act, 2000",
+    source_url="https://example.test/act",
+    section="1",
+    article=None,
+    content="Some legal text.",
+)
 
 
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch,
     *,
     classification: llm_module.Classification = IT_LAW_CLASSIFICATION,
-    answer: str = "Here is some general information about that.",
+    answer: str = "Here is some general information about that. [1]",
+    retrieved: list[RetrievedChunk] | None = None,
     record_history: list[list[tuple[str, str]]] | None = None,
 ) -> None:
+    resolved_retrieved = [FAKE_CHUNK] if retrieved is None else retrieved
+
     async def fake_classify(message: str, *, settings: object) -> llm_module.Classification:
         return classification
 
+    async def fake_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
+        return resolved_retrieved
+
     async def fake_generate(
-        message: str, *, history: list[tuple[str, str]], settings: object
+        message: str,
+        *,
+        history: list[tuple[str, str]],
+        context: list[RetrievedChunk],
+        settings: object,
     ) -> str:
         if record_history is not None:
             record_history.append(history)
         return answer
 
     monkeypatch.setattr(llm_module, "classify_query", fake_classify)
-    monkeypatch.setattr(llm_module, "generate_answer", fake_generate)
+    monkeypatch.setattr(retrieval_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(llm_module, "generate_grounded_answer", fake_generate)
 
 
 async def _register(db_client: AsyncClient) -> dict[str, object]:
@@ -71,9 +96,59 @@ async def test_anonymous_user_can_chat(
     assert body["conversation_id"]
     assert body["user_message"]["role"] == "user"
     assert body["user_message"]["legal_category"] == "IT_LAW"
+    expected_answer = "Here is some general information about that. [1]"
     assert body["assistant_message"]["role"] == "assistant"
-    assert body["assistant_message"]["content"] == "Here is some general information about that."
+    assert body["assistant_message"]["content"] == expected_answer
+    assert body["assistant_message"]["sources"] == [
+        {
+            "document_id": str(FAKE_CHUNK.document_id),
+            "document_title": FAKE_CHUNK.document_title,
+            "section": FAKE_CHUNK.section,
+            "article": FAKE_CHUNK.article,
+            "source_url": FAKE_CHUNK.source_url,
+        }
+    ]
     assert body["disclaimer"]
+
+
+async def test_insufficient_evidence_short_circuits_generation(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generate_called = False
+
+    async def fake_generate(*_args: object, **_kwargs: object) -> str:
+        nonlocal generate_called
+        generate_called = True
+        return "should not be reached"
+
+    _patch_llm(monkeypatch, retrieved=[])
+    monkeypatch.setattr(llm_module, "generate_grounded_answer", fake_generate)
+
+    resp = await db_client.post("/api/v1/chat/messages", json={"message": "What is an affidavit?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assistant_message"]["content"] == INSUFFICIENT_EVIDENCE_MESSAGE
+    assert body["assistant_message"]["sources"] == []
+    assert generate_called is False
+
+
+async def test_retrieval_unavailable_falls_back_to_insufficient_evidence(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.errors import ServiceUnavailableError
+
+    async def raising_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
+        raise ServiceUnavailableError("no key", code="embeddings_not_configured")
+
+    async def fake_classify(message: str, *, settings: object) -> llm_module.Classification:
+        return IT_LAW_CLASSIFICATION
+
+    monkeypatch.setattr(llm_module, "classify_query", fake_classify)
+    monkeypatch.setattr(retrieval_module, "hybrid_search", raising_search)
+
+    resp = await db_client.post("/api/v1/chat/messages", json={"message": "What is an affidavit?"})
+    assert resp.status_code == 200
+    assert resp.json()["assistant_message"]["content"] == INSUFFICIENT_EVIDENCE_MESSAGE
 
 
 async def test_out_of_scope_short_circuits_generation(
@@ -90,12 +165,13 @@ async def test_out_of_scope_short_circuits_generation(
         return OUT_OF_SCOPE_CLASSIFICATION
 
     monkeypatch.setattr(llm_module, "classify_query", fake_classify)
-    monkeypatch.setattr(llm_module, "generate_answer", fake_generate)
+    monkeypatch.setattr(llm_module, "generate_grounded_answer", fake_generate)
 
     resp = await db_client.post("/api/v1/chat/messages", json={"message": "write me a poem"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["assistant_message"]["content"] == OUT_OF_SCOPE_MESSAGE
+    assert body["assistant_message"]["sources"] is None
     assert body["user_message"]["is_out_of_scope"] is True
     assert generate_called is False
 

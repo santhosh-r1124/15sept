@@ -1,5 +1,13 @@
 import { apiFetch } from './api-client';
 
+export interface SourceOut {
+  document_id: string;
+  document_title: string;
+  section: string | null;
+  article: string | null;
+  source_url: string;
+}
+
 export interface ChatMessageOut {
   id: string;
   role: 'user' | 'assistant';
@@ -7,6 +15,9 @@ export interface ChatMessageOut {
   legal_category: string | null;
   jurisdiction_scope: string | null;
   is_out_of_scope: boolean | null;
+  // Assistant messages only: sources retrieved to ground the answer. Null
+  // for out-of-scope replies; [] means retrieval found nothing relevant.
+  sources?: SourceOut[] | null;
   created_at: string;
 }
 

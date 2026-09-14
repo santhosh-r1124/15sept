@@ -14,6 +14,16 @@ class SendMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class SourceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    document_id: uuid.UUID
+    document_title: str
+    section: str | None
+    article: str | None
+    source_url: str
+
+
 class ChatMessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +33,9 @@ class ChatMessageOut(BaseModel):
     legal_category: str | None
     jurisdiction_scope: str | None
     is_out_of_scope: bool | None
+    # Assistant messages only: the legal_chunks that grounded the answer.
+    # Null for out-of-scope replies; [] means retrieval ran but found nothing.
+    sources: list[SourceOut] | None = None
     created_at: datetime
 
 

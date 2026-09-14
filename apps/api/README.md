@@ -26,8 +26,9 @@ app/
 │   ├── redis.py          # async Redis client lifecycle
 │   ├── email.py          # EmailSender abstraction (dev: logs; Phase 11: real provider)
 │   ├── tokens.py          # issue + persist an access/refresh token pair
-│   ├── llm.py             # Claude: query classification + answer generation (Phase 2)
-│   └── ingestion/         # fetch/extract/clean/chunk/embed/search (Phase 3)
+│   ├── llm.py             # Claude: query classification + grounded answer generation (Phase 2/4)
+│   ├── ingestion/         # fetch/extract/clean/chunk/embed/search (Phase 3)
+│   └── rag/               # hybrid search + Reciprocal Rank Fusion (Phase 4)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
@@ -75,19 +76,27 @@ token from `/auth/register` or `/auth/login` to call protected routes.
   wires a real provider behind `app/services/email.py::EmailSender`. Read the
   link out of the API's log output in development.
 
-## Chat (Phase 2)
+## Chat (Phase 2) + grounded retrieval (Phase 4)
 
 `POST /api/v1/chat/messages` works with or without a bearer token (public
-tier). One Claude call classifies the message (`app/services/llm.py::classify_query`
-— legal category, jurisdiction scope, in/out of scope); a second call
-generates the answer only when in scope. **No retrieval grounding yet** —
-that's `services/document-processing` (Phase 3) and `services/rag` (Phase 4);
-the system prompt instructs the model to defer to an advocate rather than
-invent specifics in the meantime.
+tier). One Claude call classifies the message
+(`app/services/llm.py::classify_query` — legal category, jurisdiction scope,
+in/out of scope). If in scope, `app/services/rag/retrieval.py::hybrid_search`
+retrieves candidate `legal_chunks` (pgvector cosine similarity + Postgres
+full-text search, fused with Reciprocal Rank Fusion); a second Claude call
+(`llm.py::generate_grounded_answer`) answers using only those chunks and
+cites them. If retrieval finds nothing — empty corpus, an unrelated question,
+or `GEMINI_API_KEY` not configured — the endpoint returns
+`INSUFFICIENT_EVIDENCE_MESSAGE` without calling Claude a second time, per the
+platform's "grounded, not guessed" rule. See
+[`docs/adr/0007-hybrid-search-and-grounding.md`](../../docs/adr/0007-hybrid-search-and-grounding.md).
 
 Requires `ANTHROPIC_API_KEY` in `apps/api/.env` — unset by default. Without
 it the endpoint returns `503 {"error": {"code": "llm_not_configured"}}`
-rather than failing silently or guessing.
+rather than failing silently or guessing. `GEMINI_API_KEY` is also required
+for grounded answers (see the knowledge-base section below) — its absence
+degrades to the insufficient-evidence reply rather than a 503, since from the
+user's side that's indistinguishable from "no matching sources exist".
 
 ## Legal knowledge base / ingestion (Phase 3)
 
@@ -131,7 +140,10 @@ explicit `.create()`/`.drop()` pattern — see
 `migrations/versions/20260102_0000-0002_auth_tables.py`. The `legal_chunks`
 table adds a `pgvector` column (`Vector(768)`, from the `pgvector` package)
 plus a raw-SQL HNSW cosine index — see
-`migrations/versions/20260104_0000-0004_legal_sources.py`.
+`migrations/versions/20260104_0000-0004_legal_sources.py`. Migration
+`20260105_0000-0005_rag_grounding.py` adds a Postgres generated
+`tsvector` column (`legal_chunks.content_tsv`, GIN-indexed) backing the
+keyword half of hybrid search, plus `chat_messages.sources` (JSONB).
 
 ## Testing
 

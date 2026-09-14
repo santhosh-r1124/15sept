@@ -1,15 +1,17 @@
-"""Claude-backed query classification and answer generation (Phase 2).
+"""Claude-backed query classification and grounded answer generation.
 
-No retrieval grounding yet — that's `services/document-processing` (Phase 3)
-and `services/rag` (Phase 4). Generation is instructed to stay general and
-defer to an advocate for anything needing case-specific judgement rather than
-inventing specifics, which is the closest honest approximation of the
-platform's "don't guess" rule until real grounding exists.
+Classification (Phase 2) is intentionally lightweight (one forced tool call).
+Phase 5 formalises this into a proper `services/legal-classifier` +
+`services/risk-engine` pair; when that lands, this module should delegate to
+them instead of reimplementing the taxonomy inline.
 
-Classification is intentionally lightweight (one forced tool call). Phase 5
-formalises this into a proper `services/legal-classifier` + `services/risk-engine`
-pair; when that lands, this module should delegate to them instead of
-reimplementing the taxonomy inline.
+Generation (Phase 4) is grounded: the caller (app/api/v1/routes/chat.py) runs
+`app.services.rag.retrieval.hybrid_search` first and passes the retrieved
+chunks in as `context`. The model is instructed to answer only from that
+context and to cite it — see `_GROUNDED_ANSWER_SYSTEM_PROMPT`. There is no
+ungrounded generation path: per the product's "grounded, not guessed" rule
+(docs/roadmap.md), if retrieval finds nothing, the caller returns
+`INSUFFICIENT_EVIDENCE_MESSAGE` without calling this module at all.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import anthropic
 from app.core.config import Settings
 from app.core.errors import ServiceUnavailableError
 from app.core.logging import get_logger
+from app.services.rag.retrieval import RetrievedChunk
 
 logger = get_logger("app.llm")
 
@@ -88,21 +91,27 @@ _CLASSIFIER_SYSTEM_PROMPT = (
     "help with is NOT out of scope (category DOCUMENT_GUIDANCE, scope UNKNOWN)."
 )
 
-_ANSWER_SYSTEM_PROMPT = (
+_GROUNDED_ANSWER_SYSTEM_PROMPT = (
     "You are the Legal Advisor assistant: a general Indian legal-information "
     "helper for consumers, IT professionals, startups and organisations.\n\n"
+    "Each user turn includes a SOURCES block: numbered excerpts retrieved from "
+    "verified Indian legal documents, followed by the actual QUESTION.\n\n"
     "Rules:\n"
+    "- Answer using ONLY the SOURCES provided. Do not use outside knowledge of "
+    "Indian law, and do not fill gaps with assumptions.\n"
+    "- Cite the source(s) backing every factual claim with its bracketed "
+    "number, e.g. [1], right after the claim. Do not cite a source for a "
+    "sentence it doesn't actually support.\n"
+    "- If the sources don't fully answer the question, say plainly what they "
+    "don't cover instead of guessing, and recommend consulting a qualified "
+    "advocate for that part.\n"
     "- Provide general legal information and document guidance only — never "
     "individualised legal advice — and never claim to be a lawyer or to create "
     "an advocate-client relationship.\n"
     "- If the answer genuinely depends on state law, local rules, stamp duty, "
-    "registration procedure, or court jurisdiction, say so explicitly and ask "
-    "which Indian state/city is involved rather than quoting one figure as "
-    "universal.\n"
-    "- If a question needs case-specific judgement, document drafting, "
-    "representation, or you are not confident of the current legal position, "
-    "say that plainly and recommend consulting a qualified advocate instead of "
-    "guessing.\n"
+    "registration procedure, or court jurisdiction and the sources don't "
+    "specify which, say so explicitly and ask which Indian state/city is "
+    "involved rather than quoting one figure as universal.\n"
     "- Keep answers concise and in plain language, structured with short "
     "paragraphs or bullet points where useful.\n"
     "- Do not restate the platform's legal disclaimer yourself — it is shown "
@@ -165,21 +174,46 @@ async def classify_query(message: str, *, settings: Settings) -> Classification:
     )
 
 
-async def generate_answer(
-    message: str, *, history: list[tuple[str, str]], settings: Settings
+def _format_context(context: list[RetrievedChunk]) -> str:
+    parts: list[str] = []
+    for index, chunk in enumerate(context, start=1):
+        label = chunk.document_title
+        if chunk.section:
+            label += f", Section {chunk.section}"
+        if chunk.article:
+            label += f", Article {chunk.article}"
+        parts.append(f"[{index}] {label}\n{chunk.content}")
+    return "\n\n".join(parts)
+
+
+async def generate_grounded_answer(
+    message: str,
+    *,
+    history: list[tuple[str, str]],
+    context: list[RetrievedChunk],
+    settings: Settings,
 ) -> str:
-    """`history` is a list of (role, content) pairs, oldest first."""
+    """`history` is a list of (role, content) pairs, oldest first. `context`
+    is the hybrid-search result for the *current* message only — prior turns
+    in `history` keep whatever plain text was actually said, not their
+    original sources block, since that's what the conversation actually was.
+    """
     client = _client(settings)
     messages: list[dict[str, object]] = [
         {"role": role, "content": content} for role, content in history
     ]
-    messages.append({"role": "user", "content": message})
+    messages.append(
+        {
+            "role": "user",
+            "content": f"SOURCES:\n{_format_context(context)}\n\nQUESTION: {message}",
+        }
+    )
 
     try:
         response = await client.messages.create(
             model=settings.llm_model,
             max_tokens=settings.llm_max_tokens,
-            system=_ANSWER_SYSTEM_PROMPT,
+            system=_GROUNDED_ANSWER_SYSTEM_PROMPT,
             messages=messages,  # type: ignore[arg-type]
         )
     except Exception as exc:  # Anthropic SDK: network/auth/rate-limit/etc.

@@ -12,6 +12,7 @@ decision, numbered sequentially. Status: `Proposed` → `Accepted` →
 | 0004 | Domain logic lives in apps/api, not services/* (for now) | Accepted |
 | 0005 | Embedding provider: Gemini (free tier)      | Accepted |
 | 0006 | Chunking strategy: plain sliding window, no heading detection | Accepted |
+| 0007 | Hybrid search via RRF (not a reranker model), retrieval-based grounding guardrail | Accepted |
 
 ## Template
 

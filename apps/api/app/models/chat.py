@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, ForeignKey, Index, String, Text, func, text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -63,6 +64,12 @@ class ChatMessage(Base):
     legal_category: Mapped[str | None] = mapped_column(String(30))
     jurisdiction_scope: Mapped[str | None] = mapped_column(String(30))
     is_out_of_scope: Mapped[bool | None] = mapped_column(Boolean)
+
+    # Set on the assistant's message only (Phase 4) — the legal_chunks that
+    # grounded the answer, as [{document_id, document_title, section, article,
+    # source_url}]. Null for out-of-scope replies; an empty list means
+    # retrieval ran but found nothing (the "insufficient evidence" case).
+    sources: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 

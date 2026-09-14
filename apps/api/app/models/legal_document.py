@@ -13,8 +13,9 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Date, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Computed, Date, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -105,6 +106,13 @@ class LegalChunk(Base):
     page_number: Mapped[int | None] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
+    # DB-generated (Postgres `GENERATED ALWAYS AS ... STORED`) — never set from
+    # Python, kept in sync with `content` automatically. Backs the keyword half
+    # of hybrid search (app/services/rag/retrieval.py, Phase 4); see migration
+    # 0005_rag_grounding for the matching GIN index.
+    content_tsv: Mapped[str] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', content)", persisted=True), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
 
     document: Mapped[LegalDocument] = relationship(back_populates="chunks")

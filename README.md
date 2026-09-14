@@ -8,10 +8,11 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> **Phases 0–3 are done**: foundation, authentication & RBAC, public legal chat
-> (ungrounded — no retrieval yet), and the legal knowledge-base ingestion
-> pipeline (built + validated against real Acts; not yet wired into chat, and
-> no bulk corpus loaded). See [`docs/roadmap.md`](docs/roadmap.md) for the
+> **Phases 0–4 are done**: foundation, authentication & RBAC, the legal
+> knowledge-base ingestion pipeline, and production RAG (hybrid search +
+> grounded, cited chat answers) — see the caveat below: no bulk corpus is
+> loaded yet, so most answers are currently "insufficient evidence" until
+> real sources are ingested. See [`docs/roadmap.md`](docs/roadmap.md) for the
 > full 16-phase plan and status, and [`docs/architecture.md`](docs/architecture.md)
 > for the system design.
 
@@ -28,7 +29,7 @@ legal-platform/
 ├── services/                # Python domain services — stubs for now; real
 │   │                        # logic lives in apps/api/app/services/ until the
 │   │                        # Docker build context is repo-root (docs/adr/0004)
-│   ├── rag/                 # Phase 4 — retrieval + generation pipeline
+│   ├── rag/                 # Phase 4 — real impl: apps/api/app/services/rag/ + app/services/llm.py
 │   ├── document-processing/ # Phase 3 — real impl: apps/api/app/services/ingestion/
 │   ├── legal-classifier/    # Phase 5 — query category classification
 │   ├── risk-engine/         # Phase 5 — LOW/MEDIUM/HIGH/CRITICAL risk scoring
@@ -97,13 +98,14 @@ Verification/reset emails are logged (not sent) in development — read the link
 out of the API log output. To create an admin account (there's no public
 admin sign-up): `cd apps/api && uv run python -m app.scripts.create_admin --email you@example.com`.
 
-`/chat` needs `ANTHROPIC_API_KEY`, and legal-source ingestion
-(`/api/v1/admin/legal-sources`) needs `GEMINI_API_KEY` — both in
-`apps/api/.env`, both unset by default. Without them the relevant endpoint
-returns a clear `503`/`FAILED` (`llm_not_configured` /
-`embeddings_not_configured`) rather than guessing. Chat has no retrieval
-grounding yet (that's Phase 4), so treat its answers as informational, not
-citation-backed.
+`/chat` needs **both** `ANTHROPIC_API_KEY` (classification + answer
+generation) and `GEMINI_API_KEY` (retrieval — Phase 4 answers are grounded
+in `legal_chunks`, not the model's own knowledge) — both in `apps/api/.env`,
+both unset by default. Without `ANTHROPIC_API_KEY` the endpoint 503s
+(`llm_not_configured`); without `GEMINI_API_KEY`, or before any legal sources
+are ingested, it replies with the "insufficient verified information"
+message instead of guessing — see
+[`docs/adr/0007-hybrid-search-and-grounding.md`](docs/adr/0007-hybrid-search-and-grounding.md).
 
 ### Running apps individually (without Docker)
 

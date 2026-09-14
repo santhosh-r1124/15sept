@@ -9,7 +9,7 @@ deliverable and builds on the previous one.
 | 1     | Authentication                | Full auth + RBAC (CONSUMER, ADVOCATE, ADMIN, LEGAL_ADMIN, ENTERPRISE_USER) | ✅ Done |
 | 2     | Public AI Chat                | Working public Indian legal-information chatbot                   | ✅ Done (no retrieval grounding yet — see below) |
 | 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ✅ Done (pipeline + storage; bulk corpus population is follow-up) |
-| 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ⬜ Not started |
+| 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ✅ Done (wired into chat; most answers are "insufficient evidence" until a corpus is loaded) |
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ⬜ Not started |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ⬜ Not started |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ⬜ Not started |
@@ -85,6 +85,42 @@ deliverable and builds on the previous one.
   populating the repository.
 - Chat (Phase 2) is **not yet wired to this** — that integration (hybrid
   search, reranking, cited answers) is Phase 4.
+
+## Phase 4 — what shipped
+
+- Hybrid retrieval (`apps/api/app/services/rag/retrieval.py::hybrid_search`):
+  pgvector cosine similarity + Postgres full-text search (a generated
+  `tsvector` column, GIN-indexed — migration 0005) over `legal_chunks`,
+  fused with Reciprocal Rank Fusion (RRF) rather than a paid/ML reranker —
+  see [`docs/adr/0007-hybrid-search-and-grounding.md`](adr/0007-hybrid-search-and-grounding.md)
+  for why, including the no-paid-services constraint.
+- `POST /api/v1/chat/messages` now runs retrieval for in-scope questions and
+  answers only from what it finds (`llm.py::generate_grounded_answer`),
+  citing sources with `[n]` markers. Citations are also persisted on the
+  assistant `ChatMessage` (`sources` JSONB — document, section/article,
+  source URL) and rendered as a source list in `apps/web`'s chat UI.
+- **Guardrail**: retrieval returning nothing — empty corpus, an unrelated
+  question, or `GEMINI_API_KEY` unset — short-circuits to
+  `INSUFFICIENT_EVIDENCE_MESSAGE` without a second Claude call, rather than
+  guessing. A hard cosine-distance threshold was considered and rejected:
+  there's no real corpus yet to calibrate one against.
+- **Chat now needs both API keys** to produce a grounded answer:
+  `ANTHROPIC_API_KEY` (unchanged from Phase 2) and `GEMINI_API_KEY` (new —
+  same key Phase 3's ingestion uses). Missing `ANTHROPIC_API_KEY` still 503s;
+  missing `GEMINI_API_KEY` degrades to the insufficient-evidence reply
+  instead, since that failure mode is indistinguishable from "no sources
+  matched" on the user's side.
+- **Still no bulk corpus loaded** (carried over from Phase 3) — so in the
+  platform's current state, hybrid search returns nothing for essentially
+  every query and almost all chat answers are correctly
+  "insufficient evidence". This is the honest behavior of an empty knowledge
+  base, not a regression; verified end-to-end by
+  `test_hybrid_search_returns_empty_list_when_no_chunks_exist` and
+  `test_insufficient_evidence_short_circuits_generation`.
+- The Phase 3 admin debug endpoint (`GET /admin/legal-sources/search`,
+  plain vector search) is unchanged — kept deliberately separate from the
+  chat pipeline's hybrid search so an admin can inspect raw embedding
+  similarity without RRF re-ordering muddying the signal.
 
 ## MVP scope (Phase 16)
 

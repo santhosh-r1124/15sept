@@ -1,4 +1,4 @@
-"""Public + authenticated legal chat (Phase 2).
+"""Public + authenticated legal chat (Phase 2) with grounded retrieval (Phase 4).
 
 Anyone can chat (Tier 1 / public, per the FRD) — ``conversation_id`` is enough
 to continue a thread anonymously. Logging in additionally ties the
@@ -15,8 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser, SettingsDep
-from app.core.errors import ForbiddenError, NotFoundError
-from app.core.legal_text import MANDATORY_DISCLAIMER, OUT_OF_SCOPE_MESSAGE
+from app.core.errors import ForbiddenError, NotFoundError, ServiceUnavailableError
+from app.core.legal_text import (
+    INSUFFICIENT_EVIDENCE_MESSAGE,
+    MANDATORY_DISCLAIMER,
+    OUT_OF_SCOPE_MESSAGE,
+)
+from app.core.logging import get_logger
 from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.user import User
 from app.schemas.chat import (
@@ -27,8 +32,11 @@ from app.schemas.chat import (
     SendMessageResponse,
 )
 from app.services import llm as llm_service
+from app.services.rag import retrieval as retrieval_service
+from app.services.rag.retrieval import RetrievedChunk
 
 router = APIRouter()
+logger = get_logger("app.chat")
 
 _TITLE_MAX_LEN = 60
 
@@ -51,6 +59,30 @@ async def _load_conversation(db: DbSession, conversation_id: uuid.UUID) -> Conve
     if conversation is None:
         raise NotFoundError("Conversation not found.")
     return conversation
+
+
+async def _retrieve(message: str, *, db: DbSession, settings: SettingsDep) -> list[RetrievedChunk]:
+    """Retrieval is a soft dependency: if embeddings aren't configured (or the
+    provider errors), that's not a reason to 500 the whole chat request — it's
+    indistinguishable, from the user's side, from "no matching sources were
+    found", so it degrades to the same INSUFFICIENT_EVIDENCE_MESSAGE path
+    rather than guessing an ungrounded answer or surfacing a raw 503.
+    """
+    try:
+        return await retrieval_service.hybrid_search(message, db=db, settings=settings)
+    except ServiceUnavailableError as exc:
+        logger.info("retrieval_unavailable", code=exc.code)
+        return []
+
+
+def _source_dict(chunk: RetrievedChunk) -> dict[str, object]:
+    return {
+        "document_id": str(chunk.document_id),
+        "document_title": chunk.document_title,
+        "section": chunk.section,
+        "article": chunk.article,
+        "source_url": chunk.source_url,
+    }
 
 
 @router.post("/messages", response_model=SendMessageResponse, summary="Send a chat message")
@@ -81,15 +113,25 @@ async def send_message(
     user_message.jurisdiction_scope = classification.jurisdiction_scope
     user_message.is_out_of_scope = classification.is_out_of_scope
 
+    sources: list[dict[str, object]] | None = None
     if classification.is_out_of_scope:
         answer_text = OUT_OF_SCOPE_MESSAGE
     else:
-        answer_text = await llm_service.generate_answer(
-            payload.message, history=history, settings=settings
-        )
+        retrieved = await _retrieve(payload.message, db=db, settings=settings)
+        if not retrieved:
+            answer_text = INSUFFICIENT_EVIDENCE_MESSAGE
+            sources = []
+        else:
+            answer_text = await llm_service.generate_grounded_answer(
+                payload.message, history=history, context=retrieved, settings=settings
+            )
+            sources = [_source_dict(chunk) for chunk in retrieved]
 
     assistant_message = ChatMessage(
-        conversation_id=conversation.id, role=MessageRole.ASSISTANT, content=answer_text
+        conversation_id=conversation.id,
+        role=MessageRole.ASSISTANT,
+        content=answer_text,
+        sources=sources,
     )
     db.add(assistant_message)
 

@@ -1,8 +1,11 @@
 """Semantic search over ingested legal chunks (pgvector cosine distance).
 
-This is a plain vector search to prove the repository is "searchable" (the
-Phase 3 deliverable) — hybrid keyword+vector search, reranking, and wiring
-this into the chat pipeline are Phase 4.
+Plain vector search — the Phase 3 deliverable, kept as-is as an admin debug
+tool (`GET /admin/legal-sources/search`) for sanity-checking what an
+embedding actually retrieves. The chat pipeline uses hybrid (vector + Postgres
+full-text) search instead, fused with Reciprocal Rank Fusion — see
+`app.services.rag.retrieval.hybrid_search` (Phase 4) and
+docs/adr/0007-hybrid-search-and-grounding.md for why the two are kept separate.
 """
 
 from __future__ import annotations
