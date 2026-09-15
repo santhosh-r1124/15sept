@@ -10,10 +10,13 @@ import {
   type QuestionOut,
 } from '@/lib/document-client';
 
+// Acronyms that should stay all-caps rather than being title-cased.
+const ACRONYMS = new Set(['NDA']);
+
 function formatTypeLabel(documentType: string): string {
   return documentType
     .split('_')
-    .map((w) => w[0] + w.slice(1).toLowerCase())
+    .map((w) => (ACRONYMS.has(w) ? w : w[0] + w.slice(1).toLowerCase()))
     .join(' ');
 }
 
