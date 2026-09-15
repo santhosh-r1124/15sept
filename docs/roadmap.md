@@ -11,7 +11,7 @@ deliverable and builds on the previous one.
 | 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ✅ Done (pipeline + storage; bulk corpus population is follow-up) |
 | 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ✅ Done (wired into chat; most answers are "insufficient evidence" until a corpus is loaded) |
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ✅ Done |
-| 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ⬜ Not started |
+| 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ✅ Done |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ⬜ Not started |
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ⬜ Not started |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ⬜ Not started |
@@ -144,6 +144,40 @@ deliverable and builds on the previous one.
   for the Phase 12 admin "high-risk query review" queue.
 - No new API keys or settings — risk scoring rides on the same
   `ANTHROPIC_API_KEY` classification call Phase 2 already required.
+
+## Phase 6 — what shipped
+
+- `GET /api/v1/documents/types` — all 11 document types from
+  `packages/shared/src/legal.ts::DOCUMENT_TYPES` (Rental Agreement,
+  Employment Agreement, NDA, Affidavit, Declaration, Business Agreement,
+  Partnership Document, Authorization Letter, Service Agreement, Legal
+  Notice, Other), each with a fixed questionnaire
+  (`apps/api/app/services/document_assistant/questions.py`) — matches the
+  FRD §7 worked example, every set asks for the Indian state (FRD §12).
+- `POST /api/v1/documents` — validates the answers against that type's
+  required questions (422 with per-field details if any are missing), then
+  one Claude call (`document_assistant/generation.py::generate_draft`)
+  produces a labeled DRAFT plus a Notes section (what's normally required,
+  common clauses, likely supporting documents, what professional
+  verification may be required) and persists it. Works anonymously or
+  logged in, same as chat.
+- **Not RAG-grounded** — no `hybrid_search` call, no citations. This was a
+  deliberate scope decision, not an oversight:
+  see [`docs/adr/0009-document-assistant-scope.md`](adr/0009-document-assistant-scope.md).
+  Safety comes from the prompt (state-variance + professional-verification
+  language, DRAFT-only framing, no invented facts) and the standard
+  `MANDATORY_DISCLAIMER`, not citations.
+- **Failed generations aren't persisted** — unlike ingestion's
+  `ingestion_status=FAILED` rows, a Claude failure here 503s the request
+  directly (same pattern as chat); every `document_requests` row is a
+  successfully generated draft (docs/adr/0009).
+- `GET /documents` (your own requests) / `GET /documents/{id}`
+  (ownership-checked, readable anonymously if it has no owner) — same shape
+  as chat's conversation endpoints.
+- Requires `ANTHROPIC_API_KEY` only — no new API key, no `GEMINI_API_KEY`
+  dependency, since there's no retrieval step.
+- Frontend: `apps/web` gets `/documents` — pick a type, fill the
+  questionnaire, get the draft.
 
 ## MVP scope (Phase 16)
 

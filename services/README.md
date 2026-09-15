@@ -10,6 +10,7 @@ so the architecture and boundaries exist before the logic does.
 | `rag`                  | 4     | Query rewrite → hybrid search → rerank → context → Claude → guardrails |
 | `legal-classifier`     | 5     | Classify a query into a legal category + jurisdiction scope         |
 | `risk-engine`          | 5     | Score query risk (LOW/MEDIUM/HIGH/CRITICAL); decide advocate routing |
+| *(document-assistant)* | 6     | Questionnaire + draft generation — no Phase 0 stub package; lives directly in `apps/api/app/services/document_assistant/` (docs/adr/0009) |
 | `notifications`        | 11    | Fan out events to email / SMS / in-app; templates; provider adapters |
 
 ### How they are consumed

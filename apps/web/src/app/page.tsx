@@ -4,10 +4,9 @@ import { SystemStatus } from '@/components/system-status';
 import { env } from '@/lib/env';
 
 const PHASES = [
-  { n: 3, label: 'Indian Legal Knowledge Base' },
-  { n: 6, label: 'Legal Document Assistant' },
   { n: 7, label: 'Advocate Marketplace' },
   { n: 8, label: 'On-Demand Consultation' },
+  { n: 9, label: 'Advocate Portal' },
 ];
 
 export default function HomePage() {
@@ -15,21 +14,29 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-16">
       <header className="flex flex-col gap-2">
         <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-          Phase 2 · Public legal AI chat · {env.NEXT_PUBLIC_APP_ENV}
+          Phase 6 · Chat, knowledge base &amp; document assistant · {env.NEXT_PUBLIC_APP_ENV}
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">
           Indian Legal Advisor Bot &amp; Advocate Connect
         </h1>
         <p className="text-slate-600">
-          AI-grounded legal information over verified Indian sources, with a path to qualified
-          advocates when a matter needs professional help.
+          AI-grounded legal information over verified Indian sources, document drafting
+          assistance, and a path to qualified advocates when a matter needs professional help.
         </p>
-        <Link
-          href="/chat"
-          className="mt-2 w-fit rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
-        >
-          Ask a legal question →
-        </Link>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Link
+            href="/chat"
+            className="w-fit rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+          >
+            Ask a legal question →
+          </Link>
+          <Link
+            href="/documents"
+            className="w-fit rounded-lg border border-blue-700 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+          >
+            Draft a document →
+          </Link>
+        </div>
       </header>
 
       <SystemStatus />

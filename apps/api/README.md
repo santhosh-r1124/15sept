@@ -16,10 +16,11 @@ app/
 │   ├── base.py          # SQLAlchemy DeclarativeBase + naming convention
 │   └── session.py       # async engine + sessionmaker lifecycle
 ├── models/
-│   ├── user.py            # User, AdvocateProfile, *Token tables (Phase 1)
-│   ├── chat.py            # Conversation, ChatMessage (Phase 2)
-│   └── legal_document.py   # LegalDocument, LegalChunk (pgvector) (Phase 3)
-├── schemas/              # Pydantic request/response models (auth, user, advocate, admin, chat, legal_source)
+│   ├── user.py              # User, AdvocateProfile, *Token tables (Phase 1)
+│   ├── chat.py              # Conversation, ChatMessage (Phase 2)
+│   ├── legal_document.py    # LegalDocument, LegalChunk (pgvector) (Phase 3)
+│   └── document_request.py  # DocumentRequest, AssistantDocumentType (Phase 6)
+├── schemas/              # Pydantic request/response models (auth, user, advocate, admin, chat, legal_source, document_assistant)
 ├── middleware/
 │   └── request_context.py  # request-id, structured access log, timing
 ├── services/
@@ -31,7 +32,8 @@ app/
 │   ├── risk_engine.py      # risk_level -> advocate-recommendation decision (Phase 5)
 │   ├── llm.py              # Claude: grounded answer generation (Phase 4)
 │   ├── ingestion/          # fetch/extract/clean/chunk/embed/search (Phase 3)
-│   └── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
+│   ├── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
+│   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
@@ -46,7 +48,8 @@ app/
             ├── advocates.py  # advocate self-registration + own-profile
             ├── admin.py      # user list/suspend, advocate verification queue (RBAC)
             ├── chat.py       # send message (anon or logged in), list/get conversations
-            └── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
+            ├── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
+            └── documents.py  # document types/questions, generate/list/get drafts
 ```
 
 ## Develop
@@ -132,6 +135,30 @@ chunk metadata is not populated yet (dropped as unreliable against real
 PDF-extracted text — see
 [`docs/adr/0006-chunking-strategy.md`](../../docs/adr/0006-chunking-strategy.md)).
 
+## Document Assistant (Phase 6)
+
+`GET /api/v1/documents/types` returns all 11 document types
+(`AssistantDocumentType`) and each one's fixed questionnaire
+(`app/services/document_assistant/questions.py`) — a static schema, not
+LLM-generated (see
+[`docs/adr/0009-document-assistant-scope.md`](../../docs/adr/0009-document-assistant-scope.md)).
+`POST /api/v1/documents` validates the answers against the required
+questions for that type (422 with per-field details if any are missing),
+then one Claude call (`document_assistant/generation.py::generate_draft`)
+produces a labeled draft plus a "Notes" section and persists it. Works
+anonymously or logged in, same as chat; `GET /documents` /
+`GET /documents/{id}` mirror chat's list/get-conversation shape.
+
+**Not RAG-grounded** — deliberately doesn't call
+`app/services/rag/retrieval.py::hybrid_search`; there's no citation-backed
+"answer" here, just a draft assembled from the user's own answers plus
+standard document conventions (docs/adr/0009 explains why this isn't a
+"grounded, not guessed" violation). Requires only `ANTHROPIC_API_KEY` — no
+`GEMINI_API_KEY` dependency. A generation failure 503s the request directly
+(`llm_not_configured` / `llm_error`, same codes as chat) rather than being
+recorded like an ingestion failure — every `document_requests` row is a
+successfully generated draft.
+
 ## Migrations (Alembic)
 
 ```bash
@@ -154,6 +181,8 @@ plus a raw-SQL HNSW cosine index — see
 `tsvector` column (`legal_chunks.content_tsv`, GIN-indexed) backing the
 keyword half of hybrid search, plus `chat_messages.sources` (JSONB).
 `20260106_0000-0006_risk_level.py` adds `chat_messages.risk_level` (indexed).
+`20260107_0000-0007_document_requests.py` creates `document_requests`
+(+ `assistant_document_type` enum), same `create_type=False` pattern.
 
 ## Testing
 

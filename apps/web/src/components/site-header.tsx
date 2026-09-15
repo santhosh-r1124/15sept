@@ -16,6 +16,9 @@ export function SiteHeader() {
           <Link href="/chat" className="text-slate-600 hover:text-slate-900">
             Chat
           </Link>
+          <Link href="/documents" className="text-slate-600 hover:text-slate-900">
+            Documents
+          </Link>
           {loading ? null : user ? (
             <Link href="/profile" className="text-slate-600 hover:text-slate-900">
               {user.display_name || user.email}
