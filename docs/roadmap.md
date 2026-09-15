@@ -10,7 +10,7 @@ deliverable and builds on the previous one.
 | 2     | Public AI Chat                | Working public Indian legal-information chatbot                   | ✅ Done (no retrieval grounding yet — see below) |
 | 3     | Indian Legal Knowledge Base   | Searchable, source-grounded legal repository (ingestion pipeline) | ✅ Done (pipeline + storage; bulk corpus population is follow-up) |
 | 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ✅ Done (wired into chat; most answers are "insufficient evidence" until a corpus is loaded) |
-| 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ⬜ Not started |
+| 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ✅ Done |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ⬜ Not started |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ⬜ Not started |
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ⬜ Not started |
@@ -121,6 +121,29 @@ deliverable and builds on the previous one.
   plain vector search) is unchanged — kept deliberately separate from the
   chat pipeline's hybrid search so an admin can inspect raw embedding
   similarity without RRF re-ordering muddying the signal.
+
+## Phase 5 — what shipped
+
+- `risk_level` (LOW/MEDIUM/HIGH/CRITICAL) is now a fourth field on the same
+  forced-tool-call classification Phase 2 already made — not a second Claude
+  call. See [`docs/adr/0008-risk-scoring.md`](adr/0008-risk-scoring.md) for
+  why (cost, and two independent judgements of the same message risking
+  disagreement).
+- Classification moved out of `llm.py` into its own module
+  (`apps/api/app/services/legal_classifier.py`) — completing the split
+  `llm.py`'s Phase 2/4 docstrings had already flagged as coming. A new
+  `risk_engine.py` holds the pure decision logic
+  (`requires_advocate_recommendation`), separate from how the risk level was
+  produced.
+- HIGH/CRITICAL messages get `ADVOCATE_RECOMMENDATION_MESSAGE` appended to
+  the assistant reply — whether it's a grounded answer or an
+  insufficient-evidence one; out-of-scope replies are unaffected (they're not
+  assessing legal risk at all).
+- `chat_messages.risk_level` (migration 0006, indexed) persists the level
+  alongside the existing `legal_category`/`jurisdiction_scope` columns, ready
+  for the Phase 12 admin "high-risk query review" queue.
+- No new API keys or settings — risk scoring rides on the same
+  `ANTHROPIC_API_KEY` classification call Phase 2 already required.
 
 ## MVP scope (Phase 16)
 

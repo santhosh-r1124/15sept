@@ -33,6 +33,7 @@ class ChatMessageOut(BaseModel):
     legal_category: str | None
     jurisdiction_scope: str | None
     is_out_of_scope: bool | None
+    risk_level: str | None
     # Assistant messages only: the legal_chunks that grounded the answer.
     # Null for out-of-scope replies; [] means retrieval ran but found nothing.
     sources: list[SourceOut] | None = None

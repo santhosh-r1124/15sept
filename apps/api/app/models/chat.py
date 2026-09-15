@@ -60,10 +60,14 @@ class ChatMessage(Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # Set on the user's message only — the outcome of app.services.llm.classify_query.
+    # Set on the user's message only — the outcome of
+    # app.services.legal_classifier.classify_query.
     legal_category: Mapped[str | None] = mapped_column(String(30))
     jurisdiction_scope: Mapped[str | None] = mapped_column(String(30))
     is_out_of_scope: Mapped[bool | None] = mapped_column(Boolean)
+    # LOW/MEDIUM/HIGH/CRITICAL (Phase 5) — indexed for the Phase 12 admin
+    # "high-risk query review" queue (docs/roadmap.md).
+    risk_level: Mapped[str | None] = mapped_column(String(10))
 
     # Set on the assistant's message only (Phase 4) — the legal_chunks that
     # grounded the answer, as [{document_id, document_title, section, article,
@@ -75,7 +79,10 @@ class ChatMessage(Base):
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
-    __table_args__ = (Index("ix_chat_messages_conversation_id", "conversation_id"),)
+    __table_args__ = (
+        Index("ix_chat_messages_conversation_id", "conversation_id"),
+        Index("ix_chat_messages_risk_level", "risk_level"),
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"ChatMessage(id={self.id!s}, role={self.role}, conv={self.conversation_id!s})"

@@ -15,6 +15,10 @@ export interface ChatMessageOut {
   legal_category: string | null;
   jurisdiction_scope: string | null;
   is_out_of_scope: boolean | null;
+  // LOW/MEDIUM/HIGH/CRITICAL. HIGH/CRITICAL already get an advocate
+  // recommendation appended to the assistant reply's `content` server-side —
+  // this field is exposed for potential admin/debug use, not rendered here.
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
   // Assistant messages only: sources retrieved to ground the answer. Null
   // for out-of-scope replies; [] means retrieval found nothing relevant.
   sources?: SourceOut[] | null;

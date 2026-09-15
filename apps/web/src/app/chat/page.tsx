@@ -76,6 +76,7 @@ export default function ChatPage() {
         legal_category: null,
         jurisdiction_scope: null,
         is_out_of_scope: null,
+        risk_level: null,
         created_at: new Date().toISOString(),
       },
     ]);

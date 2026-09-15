@@ -23,12 +23,15 @@ app/
 ├── middleware/
 │   └── request_context.py  # request-id, structured access log, timing
 ├── services/
-│   ├── redis.py          # async Redis client lifecycle
-│   ├── email.py          # EmailSender abstraction (dev: logs; Phase 11: real provider)
-│   ├── tokens.py          # issue + persist an access/refresh token pair
-│   ├── llm.py             # Claude: query classification + grounded answer generation (Phase 2/4)
-│   ├── ingestion/         # fetch/extract/clean/chunk/embed/search (Phase 3)
-│   └── rag/               # hybrid search + Reciprocal Rank Fusion (Phase 4)
+│   ├── redis.py            # async Redis client lifecycle
+│   ├── email.py            # EmailSender abstraction (dev: logs; Phase 11: real provider)
+│   ├── tokens.py           # issue + persist an access/refresh token pair
+│   ├── anthropic_client.py # shared Claude client construction (Phase 2/4/5)
+│   ├── legal_classifier.py # Claude: category + jurisdiction + risk classification (Phase 2/5)
+│   ├── risk_engine.py      # risk_level -> advocate-recommendation decision (Phase 5)
+│   ├── llm.py              # Claude: grounded answer generation (Phase 4)
+│   ├── ingestion/          # fetch/extract/clean/chunk/embed/search (Phase 3)
+│   └── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
 └── api/
@@ -76,20 +79,26 @@ token from `/auth/register` or `/auth/login` to call protected routes.
   wires a real provider behind `app/services/email.py::EmailSender`. Read the
   link out of the API's log output in development.
 
-## Chat (Phase 2) + grounded retrieval (Phase 4)
+## Chat (Phase 2) + grounded retrieval (Phase 4) + risk routing (Phase 5)
 
 `POST /api/v1/chat/messages` works with or without a bearer token (public
 tier). One Claude call classifies the message
-(`app/services/llm.py::classify_query` — legal category, jurisdiction scope,
-in/out of scope). If in scope, `app/services/rag/retrieval.py::hybrid_search`
-retrieves candidate `legal_chunks` (pgvector cosine similarity + Postgres
-full-text search, fused with Reciprocal Rank Fusion); a second Claude call
-(`llm.py::generate_grounded_answer`) answers using only those chunks and
-cites them. If retrieval finds nothing — empty corpus, an unrelated question,
-or `GEMINI_API_KEY` not configured — the endpoint returns
+(`app/services/legal_classifier.py::classify_query` — legal category,
+jurisdiction scope, **risk level** LOW/MEDIUM/HIGH/CRITICAL, in/out of
+scope — all four in the same forced tool call, see
+[`docs/adr/0008-risk-scoring.md`](../../docs/adr/0008-risk-scoring.md)). If in
+scope, `app/services/rag/retrieval.py::hybrid_search` retrieves candidate
+`legal_chunks` (pgvector cosine similarity + Postgres full-text search, fused
+with Reciprocal Rank Fusion); a second Claude call
+(`app/services/llm.py::generate_grounded_answer`) answers using only those
+chunks and cites them. If retrieval finds nothing — empty corpus, an
+unrelated question, or `GEMINI_API_KEY` not configured — the endpoint returns
 `INSUFFICIENT_EVIDENCE_MESSAGE` without calling Claude a second time, per the
 platform's "grounded, not guessed" rule. See
 [`docs/adr/0007-hybrid-search-and-grounding.md`](../../docs/adr/0007-hybrid-search-and-grounding.md).
+Either way, a HIGH/CRITICAL risk level
+(`app/services/risk_engine.py::requires_advocate_recommendation`) appends
+`ADVOCATE_RECOMMENDATION_MESSAGE` to the reply.
 
 Requires `ANTHROPIC_API_KEY` in `apps/api/.env` — unset by default. Without
 it the endpoint returns `503 {"error": {"code": "llm_not_configured"}}`
@@ -144,6 +153,7 @@ plus a raw-SQL HNSW cosine index — see
 `20260105_0000-0005_rag_grounding.py` adds a Postgres generated
 `tsvector` column (`legal_chunks.content_tsv`, GIN-indexed) backing the
 keyword half of hybrid search, plus `chat_messages.sources` (JSONB).
+`20260106_0000-0006_risk_level.py` adds `chat_messages.risk_level` (indexed).
 
 ## Testing
 

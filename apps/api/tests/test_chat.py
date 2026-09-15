@@ -1,9 +1,10 @@
 """Integration tests for the chat endpoints. Needs Postgres — see conftest.db_client.
 
-The LLM and retrieval calls are monkeypatched (app.services.llm.classify_query /
-generate_grounded_answer, app.services.rag.retrieval.hybrid_search) so these
-test persistence, RBAC/ownership and routing logic without needing a real
-ANTHROPIC_API_KEY, GEMINI_API_KEY, or network access. One test
+The classifier, LLM and retrieval calls are monkeypatched
+(app.services.legal_classifier.classify_query, app.services.llm.generate_grounded_answer,
+app.services.rag.retrieval.hybrid_search) so these test persistence,
+RBAC/ownership and routing logic without needing a real ANTHROPIC_API_KEY,
+GEMINI_API_KEY, or network access. One test
 (`test_send_message_without_api_key_returns_503`) deliberately does NOT patch
 anything, to prove the real "not configured" path works end-to-end.
 """
@@ -15,17 +16,28 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
-from app.core.legal_text import INSUFFICIENT_EVIDENCE_MESSAGE, OUT_OF_SCOPE_MESSAGE
+from app.core.legal_text import (
+    ADVOCATE_RECOMMENDATION_MESSAGE,
+    INSUFFICIENT_EVIDENCE_MESSAGE,
+    OUT_OF_SCOPE_MESSAGE,
+)
+from app.services import legal_classifier
 from app.services import llm as llm_module
 from app.services.rag import retrieval as retrieval_module
 from app.services.rag.retrieval import RetrievedChunk
 from tests.conftest import unique_email
 
-IT_LAW_CLASSIFICATION = llm_module.Classification(
-    category="IT_LAW", jurisdiction_scope="CENTRAL", is_out_of_scope=False
+IT_LAW_CLASSIFICATION = legal_classifier.Classification(
+    category="IT_LAW", jurisdiction_scope="CENTRAL", risk_level="LOW", is_out_of_scope=False
 )
-OUT_OF_SCOPE_CLASSIFICATION = llm_module.Classification(
-    category="OUT_OF_SCOPE", jurisdiction_scope="UNKNOWN", is_out_of_scope=True
+HIGH_RISK_CLASSIFICATION = legal_classifier.Classification(
+    category="ADVOCATE_REQUIRED",
+    jurisdiction_scope="COURT",
+    risk_level="HIGH",
+    is_out_of_scope=False,
+)
+OUT_OF_SCOPE_CLASSIFICATION = legal_classifier.Classification(
+    category="OUT_OF_SCOPE", jurisdiction_scope="UNKNOWN", risk_level="LOW", is_out_of_scope=True
 )
 FAKE_CHUNK = RetrievedChunk(
     chunk_id=uuid.uuid4(),
@@ -41,14 +53,14 @@ FAKE_CHUNK = RetrievedChunk(
 def _patch_llm(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    classification: llm_module.Classification = IT_LAW_CLASSIFICATION,
+    classification: legal_classifier.Classification = IT_LAW_CLASSIFICATION,
     answer: str = "Here is some general information about that. [1]",
     retrieved: list[RetrievedChunk] | None = None,
     record_history: list[list[tuple[str, str]]] | None = None,
 ) -> None:
     resolved_retrieved = [FAKE_CHUNK] if retrieved is None else retrieved
 
-    async def fake_classify(message: str, *, settings: object) -> llm_module.Classification:
+    async def fake_classify(message: str, *, settings: object) -> legal_classifier.Classification:
         return classification
 
     async def fake_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
@@ -65,7 +77,7 @@ def _patch_llm(
             record_history.append(history)
         return answer
 
-    monkeypatch.setattr(llm_module, "classify_query", fake_classify)
+    monkeypatch.setattr(legal_classifier, "classify_query", fake_classify)
     monkeypatch.setattr(retrieval_module, "hybrid_search", fake_search)
     monkeypatch.setattr(llm_module, "generate_grounded_answer", fake_generate)
 
@@ -109,6 +121,47 @@ async def test_anonymous_user_can_chat(
         }
     ]
     assert body["disclaimer"]
+    assert body["user_message"]["risk_level"] == "LOW"
+
+
+async def test_high_risk_appends_advocate_recommendation(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, classification=HIGH_RISK_CLASSIFICATION, answer="Here's what applies.")
+    resp = await db_client.post(
+        "/api/v1/chat/messages", json={"message": "I got a legal notice from a vendor"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user_message"]["risk_level"] == "HIGH"
+    assert body["assistant_message"]["content"] == (
+        f"Here's what applies.\n\n{ADVOCATE_RECOMMENDATION_MESSAGE}"
+    )
+
+
+async def test_high_risk_advocate_recommendation_also_applies_to_insufficient_evidence(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, classification=HIGH_RISK_CLASSIFICATION, retrieved=[])
+    resp = await db_client.post(
+        "/api/v1/chat/messages", json={"message": "I got a legal notice from a vendor"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assistant_message"]["content"] == (
+        f"{INSUFFICIENT_EVIDENCE_MESSAGE}\n\n{ADVOCATE_RECOMMENDATION_MESSAGE}"
+    )
+
+
+async def test_low_risk_does_not_append_advocate_recommendation(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, answer="Plain answer, no recommendation needed.")
+    resp = await db_client.post("/api/v1/chat/messages", json={"message": "What is an affidavit?"})
+    assert resp.status_code == 200
+    content = resp.json()["assistant_message"]["content"]
+    assert content == "Plain answer, no recommendation needed."
+    assert ADVOCATE_RECOMMENDATION_MESSAGE not in content
 
 
 async def test_insufficient_evidence_short_circuits_generation(
@@ -140,10 +193,10 @@ async def test_retrieval_unavailable_falls_back_to_insufficient_evidence(
     async def raising_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
         raise ServiceUnavailableError("no key", code="embeddings_not_configured")
 
-    async def fake_classify(message: str, *, settings: object) -> llm_module.Classification:
+    async def fake_classify(message: str, *, settings: object) -> legal_classifier.Classification:
         return IT_LAW_CLASSIFICATION
 
-    monkeypatch.setattr(llm_module, "classify_query", fake_classify)
+    monkeypatch.setattr(legal_classifier, "classify_query", fake_classify)
     monkeypatch.setattr(retrieval_module, "hybrid_search", raising_search)
 
     resp = await db_client.post("/api/v1/chat/messages", json={"message": "What is an affidavit?"})
@@ -161,10 +214,10 @@ async def test_out_of_scope_short_circuits_generation(
         generate_called = True
         return "should not be reached"
 
-    async def fake_classify(*_args: object, **_kwargs: object) -> llm_module.Classification:
+    async def fake_classify(*_args: object, **_kwargs: object) -> legal_classifier.Classification:
         return OUT_OF_SCOPE_CLASSIFICATION
 
-    monkeypatch.setattr(llm_module, "classify_query", fake_classify)
+    monkeypatch.setattr(legal_classifier, "classify_query", fake_classify)
     monkeypatch.setattr(llm_module, "generate_grounded_answer", fake_generate)
 
     resp = await db_client.post("/api/v1/chat/messages", json={"message": "write me a poem"})

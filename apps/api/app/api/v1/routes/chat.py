@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, DbSession, OptionalUser, SettingsDep
 from app.core.errors import ForbiddenError, NotFoundError, ServiceUnavailableError
 from app.core.legal_text import (
+    ADVOCATE_RECOMMENDATION_MESSAGE,
     INSUFFICIENT_EVIDENCE_MESSAGE,
     MANDATORY_DISCLAIMER,
     OUT_OF_SCOPE_MESSAGE,
@@ -31,6 +32,7 @@ from app.schemas.chat import (
     SendMessageRequest,
     SendMessageResponse,
 )
+from app.services import legal_classifier, risk_engine
 from app.services import llm as llm_service
 from app.services.rag import retrieval as retrieval_service
 from app.services.rag.retrieval import RetrievedChunk
@@ -108,10 +110,11 @@ async def send_message(
     )
     db.add(user_message)
 
-    classification = await llm_service.classify_query(payload.message, settings=settings)
+    classification = await legal_classifier.classify_query(payload.message, settings=settings)
     user_message.legal_category = classification.category
     user_message.jurisdiction_scope = classification.jurisdiction_scope
     user_message.is_out_of_scope = classification.is_out_of_scope
+    user_message.risk_level = classification.risk_level
 
     sources: list[dict[str, object]] | None = None
     if classification.is_out_of_scope:
@@ -126,6 +129,9 @@ async def send_message(
                 payload.message, history=history, context=retrieved, settings=settings
             )
             sources = [_source_dict(chunk) for chunk in retrieved]
+
+        if risk_engine.requires_advocate_recommendation(classification.risk_level):
+            answer_text = f"{answer_text}\n\n{ADVOCATE_RECOMMENDATION_MESSAGE}"
 
     assistant_message = ChatMessage(
         conversation_id=conversation.id,
