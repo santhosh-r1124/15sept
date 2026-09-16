@@ -12,7 +12,7 @@ deliverable and builds on the previous one.
 | 4     | RAG Engine                    | Production Indian legal RAG (hybrid search + rerank + guardrails) | ✅ Done (wired into chat; most answers are "insufficient evidence" until a corpus is loaded) |
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ✅ Done |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ✅ Done |
-| 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ⬜ Not started |
+| 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ✅ Done |
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ⬜ Not started |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ⬜ Not started |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ⬜ Not started |
@@ -178,6 +178,33 @@ deliverable and builds on the previous one.
   dependency, since there's no retrieval step.
 - Frontend: `apps/web` gets `/documents` — pick a type, fill the
   questionnaire, get the draft.
+
+## Phase 7 — what shipped
+
+- `GET /api/v1/advocates` — public directory search over `AdvocateProfile`
+  (built in Phase 1), filterable by `practice_area`, `state_code`, `city`,
+  `language`, `min_experience_years`, `max_consultation_fee`; paginated,
+  ordered most-experienced-first. Only ever returns `VERIFIED` advocates —
+  pending/rejected profiles are excluded, not just hidden.
+- `GET /api/v1/advocates/{id}` — single verified advocate's public profile.
+  Same 404 whether the id doesn't exist or exists but isn't verified, so an
+  unverified advocate's profile isn't discoverable even by guessing its id.
+- Public responses (`AdvocateDirectoryEntry`) are a narrower shape than the
+  advocate's own `AdvocateProfileOut`: adds `display_name` (joined from
+  `User`, not a column on the profile itself) and omits
+  `verification_note` (an internal admin moderation note).
+- **Two FRD §8 filters aren't implemented**: "consultation type" and
+  ratings/reviews. Neither exists as real data yet — both only make sense
+  once Phase 8 introduces actual consultations (a type to declare, a
+  completed matter to review) — so they weren't faked with placeholder
+  fields.
+- No schema changes — Phase 1's `advocate_profiles` table already had every
+  field this phase needed (`practice_areas`, `state_code`, `city`,
+  `languages`, `consultation_fee`, `experience_years`, `availability`,
+  `verification_status`).
+- Frontend: `apps/web` gets `/advocates` (filterable search) and
+  `/advocates/[id]` (profile view) — read-only; booking a consultation is
+  Phase 8, so the profile page says so rather than showing a dead button.
 
 ## MVP scope (Phase 16)
 

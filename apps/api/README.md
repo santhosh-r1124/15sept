@@ -45,7 +45,7 @@ app/
             ├── meta.py       # /api/v1/meta
             ├── auth.py       # register/login/refresh/logout, verify email, password reset
             ├── users.py      # GET/PATCH /api/v1/users/me
-            ├── advocates.py  # advocate self-registration + own-profile
+            ├── advocates.py  # advocate self-registration/own-profile + public search/profile
             ├── admin.py      # user list/suspend, advocate verification queue (RBAC)
             ├── chat.py       # send message (anon or logged in), list/get conversations
             ├── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
@@ -158,6 +158,25 @@ standard document conventions (docs/adr/0009 explains why this isn't a
 (`llm_not_configured` / `llm_error`, same codes as chat) rather than being
 recorded like an ingestion failure — every `document_requests` row is a
 successfully generated draft.
+
+## Advocate Marketplace (Phase 7)
+
+`app/api/v1/routes/advocates.py` adds public, read-only discovery on top of
+Phase 1's `AdvocateProfile` — no schema changes:
+
+| Method & path                     | Does |
+| ---------------------------------- | ---- |
+| `GET /advocates`                   | Search VERIFIED advocates — filter by `practice_area`/`state_code`/`city`/`language`/`min_experience_years`/`max_consultation_fee`, paginated |
+| `GET /advocates/{id}`              | One verified advocate's public profile; 404 for unknown *or* unverified ids |
+
+Only `verification_status=VERIFIED` profiles are ever returned — an
+advocate mid-review or rejected isn't discoverable, not even by guessing
+their profile id. The public shape (`AdvocateDirectoryEntry`) adds
+`display_name` (joined from `User`) and drops `verification_note` (an
+internal moderation field) compared to the advocate's own
+`AdvocateProfileOut`. FRD §8's "consultation type" and ratings/reviews
+filters aren't implemented — neither exists as real data until Phase 8
+introduces actual consultations.
 
 ## Migrations (Alembic)
 

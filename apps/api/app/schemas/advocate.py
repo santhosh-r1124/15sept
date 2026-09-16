@@ -67,3 +67,31 @@ class AdvocateVerifyRequest(BaseModel):
 
 class AdvocateRejectRequest(BaseModel):
     note: str = Field(min_length=1, max_length=1000)
+
+
+class AdvocateDirectoryEntry(BaseModel):
+    """Public-facing advocate listing (Phase 7) — deliberately narrower than
+    ``AdvocateProfileOut``: adds ``display_name`` (lives on ``User``, not
+    ``AdvocateProfile``) and omits ``verification_note`` (an internal
+    moderation note, never shown to consumers). Every entry is implicitly
+    VERIFIED — search only ever returns verified advocates — so the status
+    itself isn't repeated on each row.
+    """
+
+    id: uuid.UUID
+    display_name: str | None
+    practice_areas: list[str]
+    state_code: str
+    city: str
+    languages: list[str]
+    consultation_fee: Decimal | None
+    bio: str | None
+    experience_years: int | None
+    availability: dict[str, object] | None
+
+
+class PaginatedAdvocateDirectory(BaseModel):
+    items: list[AdvocateDirectoryEntry]
+    total: int
+    limit: int
+    offset: int
