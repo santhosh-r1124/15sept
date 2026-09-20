@@ -6,11 +6,13 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     admin,
+    advocate_portal,
     advocates,
     auth,
     chat,
     documents,
     legal_sources,
+    matter_documents,
     matters,
     meta,
     users,
@@ -28,3 +30,5 @@ api_router.include_router(
 )
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(matters.router, prefix="/matters", tags=["matters"])
+api_router.include_router(matter_documents.router, prefix="/matters", tags=["matter-documents"])
+api_router.include_router(advocate_portal.router, prefix="/advocates/me", tags=["advocate-portal"])

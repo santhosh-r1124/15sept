@@ -1,5 +1,6 @@
-import type { MatterServiceType, MatterStatus } from '@legal-platform/shared';
-import { apiFetch } from './api-client';
+import { isApiError, type MatterServiceType, type MatterStatus } from '@legal-platform/shared';
+import { ApiRequestError, apiFetch } from './api-client';
+import { env } from './env';
 
 export interface MatterOut {
   id: string;
@@ -37,6 +38,57 @@ export interface MatterMessageOut {
   created_at: string;
 }
 
+export interface DocumentRequestOut {
+  id: string;
+  matter_id: string;
+  description: string;
+  status: 'OPEN' | 'FULFILLED';
+  created_at: string;
+}
+
+export interface MatterFileOut {
+  id: string;
+  matter_id: string;
+  request_id: string | null;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  is_final: boolean;
+  uploader_role: 'CONSUMER' | 'ADVOCATE';
+  created_at: string;
+}
+
+export interface MatterDocumentsOut {
+  requests: DocumentRequestOut[];
+  files: MatterFileOut[];
+}
+
+/** fetch() with the Bearer header, turning the API's error envelope into an ApiRequestError. */
+async function authedRaw(path: string, token: string, init: RequestInit = {}): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...init.headers },
+    });
+  } catch {
+    throw new ApiRequestError(0, 'network_error', 'Could not reach the API.');
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    if (isApiError(payload)) {
+      throw new ApiRequestError(
+        response.status,
+        payload.error.code,
+        payload.error.message,
+        payload.error.request_id,
+      );
+    }
+    throw new ApiRequestError(response.status, 'http_error', `Request failed (${response.status}).`);
+  }
+  return response;
+}
+
 export interface CreateMatterPayload {
   advocate_id: string;
   service_type: MatterServiceType;
@@ -72,4 +124,37 @@ export const matterClient = {
       body: { body },
       token,
     }),
+
+  documents: (id: string, token: string) =>
+    apiFetch<MatterDocumentsOut>(`/api/v1/matters/${id}/documents`, { token }),
+
+  /** Multipart upload; the browser sets the Content-Type boundary, so no JSON header here. */
+  async uploadFile(
+    id: string,
+    file: File,
+    token: string,
+    opts: { requestId?: string } = {},
+  ): Promise<MatterFileOut> {
+    const form = new FormData();
+    form.set('file', file);
+    if (opts.requestId) form.set('request_id', opts.requestId);
+    const response = await authedRaw(`/api/v1/matters/${id}/files`, token, {
+      method: 'POST',
+      body: form,
+    });
+    return (await response.json()) as MatterFileOut;
+  },
+
+  /** Downloads need the Bearer header, so fetch the bytes and save the blob. */
+  async downloadFile(id: string, file: MatterFileOut, token: string): Promise<void> {
+    const response = await authedRaw(`/api/v1/matters/${id}/files/${file.id}`, token);
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.file_name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

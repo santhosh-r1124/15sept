@@ -8,15 +8,26 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-3 text-sm">
+      <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3 text-sm">
         <Link href="/" className="font-semibold tracking-tight text-slate-900">
           Advocate Portal
         </Link>
         <nav className="flex items-center gap-4">
           {loading ? null : user ? (
-            <Link href="/profile" className="text-slate-600 hover:text-slate-900">
-              {user.display_name || user.email}
-            </Link>
+            <>
+              <Link href="/" className="text-slate-600 hover:text-slate-900">
+                Dashboard
+              </Link>
+              <Link href="/matters" className="text-slate-600 hover:text-slate-900">
+                Matters
+              </Link>
+              <Link href="/earnings" className="text-slate-600 hover:text-slate-900">
+                Earnings
+              </Link>
+              <Link href="/profile" className="text-slate-600 hover:text-slate-900">
+                {user.display_name || user.email}
+              </Link>
+            </>
           ) : (
             <>
               <Link href="/login" className="text-slate-600 hover:text-slate-900">

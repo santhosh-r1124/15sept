@@ -4,9 +4,15 @@ import { isTerminalMatterStatus, MANDATORY_DISCLAIMER } from '@legal-platform/sh
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
+import { DocumentsPanel } from '@/components/documents-panel';
 import { useAuth } from '@/lib/auth-context';
 import { formatDateTime, formatInr, titleCase } from '@/lib/format';
-import { matterClient, type MatterMessageOut, type MatterOut } from '@/lib/matter-client';
+import {
+  matterClient,
+  type MatterDocumentsOut,
+  type MatterMessageOut,
+  type MatterOut,
+} from '@/lib/matter-client';
 
 const POLL_MS = 10_000;
 
@@ -15,6 +21,7 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
   const { user, accessToken, loading: authLoading } = useAuth();
   const [matter, setMatter] = useState<MatterOut | null>(null);
   const [messages, setMessages] = useState<MatterMessageOut[]>([]);
+  const [docs, setDocs] = useState<MatterDocumentsOut>({ requests: [], files: [] });
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,12 +29,14 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
   const refresh = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const [m, msgs] = await Promise.all([
+      const [m, msgs, d] = await Promise.all([
         matterClient.get(id, accessToken),
         matterClient.messages(id, accessToken),
+        matterClient.documents(id, accessToken),
       ]);
       setMatter(m);
       setMessages(msgs);
+      setDocs(d);
     } catch (err) {
       setError(
         err instanceof ApiRequestError && err.status === 404
@@ -156,6 +165,16 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
               </p>
             )}
           </div>
+
+          {accessToken && (
+            <DocumentsPanel
+              matterId={id}
+              token={accessToken}
+              docs={docs}
+              canExchange={['ACCEPTED', 'PAID', 'SCHEDULED'].includes(matter.status)}
+              onChanged={() => void refresh()}
+            />
+          )}
 
           <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="mb-2 text-sm font-semibold text-slate-700">Messages</h2>

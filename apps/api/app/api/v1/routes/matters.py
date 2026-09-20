@@ -14,7 +14,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import ColumnElement, func, select
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, SettingsDep, require_roles
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
@@ -33,6 +32,12 @@ from app.schemas.matter import (
     RejectMatterRequest,
     ScheduleMatterRequest,
 )
+from app.services.matters.access import (
+    MATTER_LOAD_OPTIONS,
+    load_matter,
+    readable_by,
+    require_actor,
+)
 from app.services.matters.lifecycle import Action, Actor, can_post_message, transition_for
 from app.services.matters.pricing import default_quote
 from app.services.payments import get_payment_provider
@@ -42,12 +47,6 @@ router = APIRouter()
 ConsumerUser = Annotated[User, Depends(require_roles(UserRole.CONSUMER, UserRole.ENTERPRISE_USER))]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
-_ADMIN_ROLES = (UserRole.ADMIN, UserRole.LEGAL_ADMIN)
-
-_MATTER_LOAD_OPTIONS = (
-    selectinload(Matter.consumer),
-    selectinload(Matter.advocate_profile).selectinload(AdvocateProfile.user),
-)
 
 
 def _to_out(matter: Matter) -> MatterOut:
@@ -76,42 +75,6 @@ def _to_out(matter: Matter) -> MatterOut:
     )
 
 
-async def _load_matter(db: DbSession, matter_id: uuid.UUID) -> Matter:
-    matter = await db.scalar(
-        select(Matter)
-        .options(*_MATTER_LOAD_OPTIONS)
-        .where(Matter.id == matter_id)
-        .execution_options(populate_existing=True)
-    )
-    if matter is None:
-        raise NotFoundError("Matter not found.")
-    return matter
-
-
-def _actor_for(user: User, matter: Matter) -> Actor | None:
-    if matter.consumer_id == user.id:
-        return Actor.CONSUMER
-    if matter.advocate_profile.user_id == user.id:
-        return Actor.ADVOCATE
-    return None
-
-
-def _readable_by(user: User, matter: Matter) -> Actor | None:
-    """The caller's role on this matter; admins may read any matter (returned as None
-    actor but allowed), everyone else must be a participant."""
-    actor = _actor_for(user, matter)
-    if actor is None and user.role not in _ADMIN_ROLES:
-        raise NotFoundError("Matter not found.")
-    return actor
-
-
-def _require_actor(user: User, matter: Matter) -> Actor:
-    actor = _actor_for(user, matter)
-    if actor is None:
-        raise NotFoundError("Matter not found.")
-    return actor
-
-
 def _apply_action(matter: Matter, action: Action, actor: Actor) -> MatterStatus:
     target = transition_for(action, actor, matter.status, matter.service_type)
     if target is None:
@@ -126,7 +89,7 @@ def _apply_action(matter: Matter, action: Action, actor: Actor) -> MatterStatus:
 async def _commit_and_reload(db: DbSession, matter: Matter) -> MatterOut:
     matter_id = matter.id
     await db.commit()
-    return _to_out(await _load_matter(db, matter_id))
+    return _to_out(await load_matter(db, matter_id))
 
 
 @router.post("", response_model=MatterOut, status_code=201, summary="Book an advocate")
@@ -185,7 +148,7 @@ async def list_matters(
         (
             await db.execute(
                 select(Matter)
-                .options(*_MATTER_LOAD_OPTIONS)
+                .options(*MATTER_LOAD_OPTIONS)
                 .where(*conditions)
                 .order_by(Matter.created_at.desc())
                 .limit(limit)
@@ -202,8 +165,8 @@ async def list_matters(
 
 @router.get("/{matter_id}", response_model=MatterOut, summary="Get a matter")
 async def get_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    _readable_by(user, matter)
+    matter = await load_matter(db, matter_id)
+    readable_by(user, matter)
     return _to_out(matter)
 
 
@@ -211,8 +174,8 @@ async def get_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 async def accept_matter(
     matter_id: uuid.UUID, payload: AcceptMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    actor = _require_actor(user, matter)
+    matter = await load_matter(db, matter_id)
+    actor = require_actor(user, matter)
     target = _apply_action(matter, Action.ACCEPT, actor)
     fee = payload.quoted_fee if payload.quoted_fee is not None else matter.quoted_fee
     if fee is None:
@@ -230,8 +193,8 @@ async def accept_matter(
 async def reject_matter(
     matter_id: uuid.UUID, payload: RejectMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    matter.status = _apply_action(matter, Action.REJECT, _require_actor(user, matter))
+    matter = await load_matter(db, matter_id)
+    matter.status = _apply_action(matter, Action.REJECT, require_actor(user, matter))
     matter.decision_note = payload.note
     return await _commit_and_reload(db, matter)
 
@@ -240,8 +203,8 @@ async def reject_matter(
 async def cancel_matter(
     matter_id: uuid.UUID, payload: CancelMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    matter.status = _apply_action(matter, Action.CANCEL, _require_actor(user, matter))
+    matter = await load_matter(db, matter_id)
+    matter.status = _apply_action(matter, Action.CANCEL, require_actor(user, matter))
     if payload.note:
         matter.decision_note = payload.note
     return await _commit_and_reload(db, matter)
@@ -251,8 +214,8 @@ async def cancel_matter(
 async def pay_matter(
     matter_id: uuid.UUID, user: CurrentUser, db: DbSession, settings: SettingsDep
 ) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    target = _apply_action(matter, Action.PAY, _require_actor(user, matter))
+    matter = await load_matter(db, matter_id)
+    target = _apply_action(matter, Action.PAY, require_actor(user, matter))
     if matter.quoted_fee is None:  # ACCEPTED always carries a quote; belt and braces
         raise ConflictError("This matter has no fee quote to pay.", code="no_quote")
 
@@ -270,8 +233,8 @@ async def pay_matter(
 async def schedule_matter(
     matter_id: uuid.UUID, payload: ScheduleMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    target = _apply_action(matter, Action.SCHEDULE, _require_actor(user, matter))
+    matter = await load_matter(db, matter_id)
+    target = _apply_action(matter, Action.SCHEDULE, require_actor(user, matter))
     when = payload.scheduled_at
     if when.tzinfo is None:
         raise ValidationAppError(
@@ -290,8 +253,8 @@ async def schedule_matter(
 
 @router.post("/{matter_id}/close", response_model=MatterOut, summary="Advocate closes the matter")
 async def close_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> MatterOut:
-    matter = await _load_matter(db, matter_id)
-    matter.status = _apply_action(matter, Action.CLOSE, _require_actor(user, matter))
+    matter = await load_matter(db, matter_id)
+    matter.status = _apply_action(matter, Action.CLOSE, require_actor(user, matter))
     matter.closed_at = datetime.now(UTC)
     return await _commit_and_reload(db, matter)
 
@@ -302,8 +265,8 @@ async def close_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -
 async def list_messages(
     matter_id: uuid.UUID, user: CurrentUser, db: DbSession
 ) -> list[MatterMessageOut]:
-    matter = await _load_matter(db, matter_id)
-    _readable_by(user, matter)
+    matter = await load_matter(db, matter_id)
+    readable_by(user, matter)
     rows = (
         (
             await db.execute(
@@ -327,8 +290,8 @@ async def list_messages(
 async def post_message(
     matter_id: uuid.UUID, payload: PostMessageRequest, user: CurrentUser, db: DbSession
 ) -> MatterMessageOut:
-    matter = await _load_matter(db, matter_id)
-    _require_actor(user, matter)
+    matter = await load_matter(db, matter_id)
+    require_actor(user, matter)
     if not can_post_message(matter.status):
         raise ConflictError(
             "This matter is closed; its message thread is read-only.", code="matter_closed"

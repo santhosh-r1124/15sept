@@ -51,3 +51,4 @@ logs/
 npm-debug.log*
 pnpm-debug.log*
 apps/api/dev/.local-pg.json
+apps/api/uploads/

@@ -11,6 +11,11 @@ from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.document_request import AssistantDocumentType, DocumentRequest
 from app.models.legal_document import DocumentType, IngestionStatus, LegalChunk, LegalDocument
 from app.models.matter import Matter, MatterMessage, MatterServiceType, MatterStatus
+from app.models.matter_document import (
+    MatterDocumentRequest,
+    MatterDocumentRequestStatus,
+    MatterFile,
+)
 from app.models.user import (
     AdvocateProfile,
     EmailVerificationToken,
@@ -34,6 +39,9 @@ __all__ = [
     "LegalChunk",
     "LegalDocument",
     "Matter",
+    "MatterDocumentRequest",
+    "MatterDocumentRequestStatus",
+    "MatterFile",
     "MatterMessage",
     "MatterServiceType",
     "MatterStatus",

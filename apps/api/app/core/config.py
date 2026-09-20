@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import enum
 import json
+from decimal import Decimal
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -113,6 +114,14 @@ class Settings(BaseSettings):
     # "mock" always succeeds and is refused in production (app/services/payments).
     # The real gateway is chosen in Phase 10.
     payment_provider: str = "mock"
+    # The platform's cut of each consultation/document fee. The FRD leaves the commission model
+    # open ("subject to the applicable professional and regulatory framework", section 16), so
+    # this defaults to 0 and needs the project owner's decision before launch.
+    platform_fee_percent: Decimal = Decimal("0")
+
+    # ---- Uploads (Phase 9+) ------------------------------------------------
+    upload_dir: str = "./uploads"
+    upload_max_bytes: int = 10 * 1024 * 1024
 
     # ---- Frontend (Phase 1+) ------------------------------------------
     # Base URL used to build links inside emails (verify-email, reset-password).

@@ -14,7 +14,7 @@ deliverable and builds on the previous one.
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ✅ Done |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ✅ Done |
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (payment is a mock until Phase 10; no voice/video) |
-| 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ⬜ Not started |
+| 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ✅ Done (files on local disk; platform fee defaults to 0 — needs owner decision) |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ⬜ Not started |
 | 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ⬜ Not started |
 | 12    | Admin & Legal Ops Dashboard   | User/advocate/RAG-source management, high-risk query review       | ⬜ Not started |
@@ -233,6 +233,31 @@ deliverable and builds on the previous one.
   Phase 2 (enum persisted as `USER` instead of `user`), the auth tests could never have passed
   (`.test` emails rejected), and the DB test fixtures leaked event-loop-bound connections. All
   fixed (commit `e06d949`); the suite went from "116 passed, 73 skipped" to all-real.
+
+## Phase 9 — what shipped
+
+- **Advocate portal** (`apps/advocate-portal`): a dashboard (new requests, to schedule, awaiting
+  payment, client replies waiting, documents requested, upcoming appointments, earnings), a
+  filterable matters list, and a matter page with everything an advocate does — accept with a fee
+  quote (prefilled for consultations) or reject with a note, schedule / reschedule, close, message
+  the client, request documents, upload files and the final deliverable. Plus an earnings page.
+- **Document exchange** (`/api/v1/matters/{id}/documents`, `/document-requests`, `/files`):
+  advocate requests, either party uploads, participants download. Only the advocate can request or
+  upload a *final* document (and only once the client has paid); admins can read but not write;
+  outsiders get 404. The client side is in `apps/web` (see requests, upload, download the final).
+- **Upload safety** (`app/services/storage`): type allowlist + magic-byte check + size cap (413),
+  server-generated storage keys (the client's name never becomes a path), `nosniff` /
+  `attachment` / `no-store` on downloads, and RFC 5987 UTF-8 filenames so Indian-script names
+  survive. Rationale and limits: [`docs/adr/0011`](adr/0011-advocate-portal-documents-and-earnings.md).
+- **Earnings** (`/api/v1/advocates/me/earnings`, `/dashboard`): *earned* = closed matters,
+  *pending* = paid and in progress; the platform fee (`PLATFORM_FEE_PERCENT`) applies to earned only.
+- **Needs your decision before launch**: the platform fee defaults to **0%** because the FRD leaves
+  the commission model open (section 16). Files are stored on **local disk** — fine for development,
+  not for a multi-instance deployment; object storage is a Phase 15 choice. Upload malware
+  scanning is Phase 13.
+- Migration `0009_matter_documents`. Verified live in a browser against real Postgres:
+  accept -> request document -> client uploads -> download -> schedule -> final upload -> close ->
+  earnings.
 
 ## MVP scope (Phase 16)
 

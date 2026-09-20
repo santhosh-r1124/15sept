@@ -35,6 +35,7 @@ app/
 │   ├── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
 │   ├── matters/            # lifecycle state machine + fee quoting (Phase 8)
 │   ├── payments/           # PaymentProvider interface + mock (Phase 8; gateway in Phase 10)
+│   ├── storage/            # upload validation + local file storage (Phase 9)
 │   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
@@ -52,7 +53,9 @@ app/
             ├── chat.py       # send message (anon or logged in), list/get conversations
             ├── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
             ├── documents.py  # document types/questions, generate/list/get drafts
-            └── matters.py    # book an advocate, accept/pay/schedule/close, message thread
+            ├── matters.py    # book an advocate, accept/pay/schedule/close, message thread
+            ├── matter_documents.py  # document requests, file upload/download (Phase 9)
+            └── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
 ```
 
 ## Develop
@@ -214,6 +217,22 @@ DATABASE_URL=<dev url> uv run python -m app.scripts.seed_demo                   
 `python -m alembic` / `python -m pytest` / `python -m uvicorn` are used because the `.exe`
 launchers can be blocked by Windows Application Control.
 
+## Advocate portal (Phase 9)
+
+| Method & path | Does |
+| --- | --- |
+| `GET /advocates/me/dashboard` | Counts + upcoming appointments + earnings summary (advocates only) |
+| `GET /advocates/me/earnings` | Earned / pending / platform fee, plus per-matter line items |
+| `GET /matters/{id}/documents` | Document requests and files for a matter |
+| `POST /matters/{id}/document-requests` | Advocate asks the client for a document |
+| `POST /matters/{id}/files` | Multipart upload (`file`, optional `request_id`, advocate-only `is_final`) |
+| `GET /matters/{id}/files/{file_id}` | Download (participants + admins) |
+
+Uploads: PDF / Word / PNG / JPEG / text only, validated by declared type *and* magic bytes,
+10 MB cap (`UPLOAD_MAX_BYTES`), stored under server-generated names in `UPLOAD_DIR`
+(default `./uploads`, local disk). `PLATFORM_FEE_PERCENT` (default 0) is the platform's cut of
+*earned* amounts. See [`docs/adr/0011`](../../docs/adr/0011-advocate-portal-documents-and-earnings.md).
+
 ## Migrations (Alembic)
 
 ```bash
@@ -239,6 +258,7 @@ keyword half of hybrid search, plus `chat_messages.sources` (JSONB).
 `20260107_0000-0007_document_requests.py` creates `document_requests`
 (+ `assistant_document_type` enum), same `create_type=False` pattern.
 `20260108_0000-0008_matters.py` creates `matters` + `matter_messages` (+ two enums).
+`20260109_0000-0009_matter_documents.py` creates `matter_document_requests` + `matter_files`.
 
 ## Testing
 

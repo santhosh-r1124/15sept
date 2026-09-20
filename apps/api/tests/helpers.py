@@ -8,6 +8,7 @@ shared transactional session — the same approach as test_advocate_search.py.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from httpx import AsyncClient
@@ -80,3 +81,51 @@ async def make_admin(session: Any, role: UserRole = UserRole.ADMIN) -> Account:
     await session.flush()
     token = security.create_access_token(user_id=user.id, role=role.value, settings=get_settings())
     return Account(headers=_bearer(token), user_id=str(user.id))
+
+
+def future_iso(days: int = 2) -> str:
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
+
+
+async def book_matter(
+    client: AsyncClient, consumer: Account, advocate: Account, **overrides: Any
+) -> dict[str, Any]:
+    payload = {
+        "advocate_id": advocate.profile_id,
+        "service_type": "CONSULTATION",
+        "consultation_minutes": 60,
+        "title": "Rental agreement review",
+        "requirement": "Review my rental agreement before I sign.",
+        **overrides,
+    }
+    resp = await client.post("/api/v1/matters", json=payload, headers=consumer.headers)
+    assert resp.status_code == 201, resp.text
+    return dict(resp.json())
+
+
+async def advance_matter(
+    client: AsyncClient,
+    matter: dict[str, Any],
+    consumer: Account,
+    advocate: Account,
+    to: str,
+    *,
+    quote: str | None = None,
+) -> dict[str, Any]:
+    """Drive a REQUESTED matter to ``to``: ACCEPTED, PAID, SCHEDULED (consultations) or CLOSED."""
+    mid = matter["id"]
+    steps: list[tuple[str, Account, dict[str, Any]]] = [
+        ("accept", advocate, {"quoted_fee": quote} if quote else {}),
+        ("pay", consumer, {}),
+        ("schedule", advocate, {"scheduled_at": future_iso()}),
+        ("close", advocate, {}),
+    ]
+    reached = {"ACCEPTED": 1, "PAID": 2, "SCHEDULED": 3, "CLOSED": 4}[to]
+    latest = matter
+    for action, who, body in steps[:reached]:
+        if action == "schedule" and matter["service_type"] != "CONSULTATION":
+            continue  # document services skip scheduling
+        resp = await client.post(f"/api/v1/matters/{mid}/{action}", json=body, headers=who.headers)
+        assert resp.status_code == 200, f"{action}: {resp.text}"
+        latest = resp.json()
+    return dict(latest)
