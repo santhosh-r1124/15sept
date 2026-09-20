@@ -50,3 +50,4 @@ logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+apps/api/dev/.local-pg.json

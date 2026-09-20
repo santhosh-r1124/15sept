@@ -38,7 +38,8 @@ os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-use-01234567
 
 def unique_email(prefix: str = "test") -> str:
     """A collision-free email for tests that don't use the transactional fixture."""
-    return f"{prefix}-{uuid.uuid4().hex[:12]}@example.test"
+    # `.test` is a reserved TLD that pydantic's email validator rejects; example.com is allowed.
+    return f"{prefix}-{uuid.uuid4().hex[:12]}@example.com"
 
 
 @pytest.fixture
@@ -66,16 +67,25 @@ async def client(app: object) -> AsyncIterator[object]:
 
 
 async def _db_reachable() -> bool:
+    # A throwaway NullPool engine, NOT the app's global one: this runs inside its own
+    # `asyncio.run()` loop, which is closed afterwards, and a pooled asyncpg connection
+    # left behind on the global engine would be bound to that dead loop (the next
+    # test's `engine.connect()` then fails with "Event loop is closed").
     from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
 
-    from app.db.session import get_sessionmaker
+    from app.core.config import get_settings
 
+    engine = create_async_engine(get_settings().sqlalchemy_url_async, poolclass=NullPool)
     try:
-        async with get_sessionmaker()() as session:
-            await session.execute(text("SELECT 1"))
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -91,12 +101,21 @@ async def db_conn(db_available: bool):
     from app.db.session import get_engine
 
     engine = get_engine()
-    async with engine.connect() as connection:
-        trans = await connection.begin()
-        try:
-            yield connection
-        finally:
-            await trans.rollback()
+    # Tests that hit the app without this fixture (e.g. /health/ready) can leave pooled
+    # connections bound to their own, already-closed event loop; discard them up front.
+    await engine.dispose()
+    try:
+        async with engine.connect() as connection:
+            trans = await connection.begin()
+            try:
+                yield connection
+            finally:
+                await trans.rollback()
+    finally:
+        # Each test runs on its own event loop; drop pooled connections while this
+        # one is still alive so the next test never inherits a connection bound to
+        # a closed loop.
+        await engine.dispose()
 
 
 @pytest.fixture
