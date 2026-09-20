@@ -18,6 +18,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
 from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.email import configure_email_sender
 from app.services.redis import close_redis
 
@@ -68,6 +69,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Request-ID"],
     )
+
+    # Outermost, so error responses and CORS preflights carry the headers too.
+    app.add_middleware(SecurityHeadersMiddleware, production=settings.app_env.is_production)
 
     register_exception_handlers(app)
 

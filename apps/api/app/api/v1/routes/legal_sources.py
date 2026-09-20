@@ -14,12 +14,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, SettingsDep, require_roles
 from app.core.errors import NotFoundError
 from app.models.legal_document import DocumentType, IngestionStatus, LegalDocument
+from app.models.organization import Organization
 from app.models.user import User, UserRole
 from app.schemas.legal_source import (
     IngestSourceRequest,
@@ -28,6 +29,7 @@ from app.schemas.legal_source import (
     SearchResponse,
     SearchResultOut,
 )
+from app.services import audit
 from app.services.ingestion.pipeline import ingest_source, reingest_source
 from app.services.ingestion.search import semantic_search
 
@@ -47,8 +49,16 @@ async def _get_document(db: DbSession, document_id: uuid.UUID) -> LegalDocument:
 
 @router.post("", response_model=LegalDocumentOut, summary="Ingest a new legal source")
 async def create_source(
-    payload: IngestSourceRequest, _admin: AdminUser, db: DbSession, settings: SettingsDep
+    payload: IngestSourceRequest,
+    admin: AdminUser,
+    db: DbSession,
+    settings: SettingsDep,
+    request: Request,
 ) -> LegalDocumentOut:
+    if payload.organization_id is not None and (
+        await db.get(Organization, payload.organization_id) is None
+    ):
+        raise NotFoundError("Organization not found.")
     document = await ingest_source(
         db=db,
         settings=settings,
@@ -60,7 +70,18 @@ async def create_source(
         state_code=payload.state_code,
         effective_date=payload.effective_date,
         version=payload.version,
+        organization_id=payload.organization_id,
     )
+    audit.record(
+        db,
+        actor=admin,
+        action="source.create",
+        target_type="legal_document",
+        target_id=document.id,
+        detail={"title": document.title},
+        request=request,
+    )
+    await db.commit()
     return LegalDocumentOut.model_validate(document)
 
 
@@ -141,15 +162,39 @@ async def get_source(document_id: uuid.UUID, _admin: AdminUser, db: DbSession) -
     summary="Re-fetch and re-chunk a source",
 )
 async def reindex_source(
-    document_id: uuid.UUID, _admin: AdminUser, db: DbSession, settings: SettingsDep
+    document_id: uuid.UUID,
+    admin: AdminUser,
+    db: DbSession,
+    settings: SettingsDep,
+    request: Request,
 ) -> LegalDocumentOut:
     document = await _get_document(db, document_id)
     document = await reingest_source(db=db, settings=settings, document=document)
+    audit.record(
+        db,
+        actor=admin,
+        action="source.reindex",
+        target_type="legal_document",
+        target_id=document.id,
+        request=request,
+    )
+    await db.commit()
     return LegalDocumentOut.model_validate(document)
 
 
 @router.delete("/{document_id}", status_code=204, summary="Remove an obsolete source")
-async def delete_source(document_id: uuid.UUID, _admin: AdminUser, db: DbSession) -> None:
+async def delete_source(
+    document_id: uuid.UUID, admin: AdminUser, db: DbSession, request: Request
+) -> None:
     document = await _get_document(db, document_id)
+    audit.record(
+        db,
+        actor=admin,
+        action="source.delete",
+        target_type="legal_document",
+        target_id=document.id,
+        detail={"title": document.title},
+        request=request,
+    )
     await db.delete(document)
     await db.commit()

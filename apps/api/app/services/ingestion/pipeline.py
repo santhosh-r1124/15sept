@@ -9,6 +9,7 @@ request, and admins need to *see* why a source failed (roadmap Phase 12:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 from sqlalchemy import delete
@@ -38,6 +39,7 @@ async def ingest_source(
     state_code: str | None = None,
     effective_date: date | None = None,
     version: str | None = None,
+    organization_id: uuid.UUID | None = None,
 ) -> LegalDocument:
     document = LegalDocument(
         title=title,
@@ -48,6 +50,7 @@ async def ingest_source(
         document_type=document_type,
         effective_date=effective_date,
         version=version,
+        organization_id=organization_id,
         checksum="",
         ingestion_status=IngestionStatus.PROCESSING,
     )

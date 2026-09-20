@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import ColumnElement, func, select
 
 from app.api.deps import CurrentUser, DbSession, SettingsDep, require_roles
@@ -29,6 +29,7 @@ from app.schemas.payment import (
     RefundOut,
     RefundRequest,
 )
+from app.services import audit
 from app.services.matters.access import ADMIN_ROLES, load_matter, readable_by
 from app.services.notifications import content as notice
 from app.services.notifications import deliver_request_emails, notify
@@ -255,6 +256,7 @@ async def admin_refund_payment(
     admin: AdminUser,
     db: DbSession,
     settings: SettingsDep,
+    request: Request,
 ) -> PaymentOut:
     payment = await get_payment_for_update(db, payment_id)
     if payment is None:
@@ -266,6 +268,15 @@ async def admin_refund_payment(
         requested=payload.amount,
         reason=payload.reason,
         initiated_by_id=admin.id,
+    )
+    audit.record(
+        db,
+        actor=admin,
+        action="refund.issue",
+        target_type="payment",
+        target_id=payment.id,
+        detail={"amount": refund.amount, "matter_id": payment.matter_id},
+        request=request,
     )
     payer = await db.get(User, payment.payer_id)
     matter_title = await db.scalar(select(Matter.title).where(Matter.id == payment.matter_id))

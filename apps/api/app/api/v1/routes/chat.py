@@ -66,7 +66,9 @@ async def _load_conversation(db: DbSession, conversation_id: uuid.UUID) -> Conve
     return conversation
 
 
-async def _retrieve(message: str, *, db: DbSession, settings: SettingsDep) -> list[RetrievedChunk]:
+async def _retrieve(
+    message: str, *, db: DbSession, settings: SettingsDep, organization_id: uuid.UUID | None
+) -> list[RetrievedChunk]:
     """Retrieval is a soft dependency: if embeddings aren't configured (or the
     provider errors), that's not a reason to 500 the whole chat request — it's
     indistinguishable, from the user's side, from "no matching sources were
@@ -74,7 +76,9 @@ async def _retrieve(message: str, *, db: DbSession, settings: SettingsDep) -> li
     rather than guessing an ungrounded answer or surfacing a raw 503.
     """
     try:
-        return await retrieval_service.hybrid_search(message, db=db, settings=settings)
+        return await retrieval_service.hybrid_search(
+            message, db=db, settings=settings, organization_id=organization_id
+        )
     except ServiceUnavailableError as exc:
         logger.info("retrieval_unavailable", code=exc.code)
         return []
@@ -144,7 +148,13 @@ async def send_message(
         if classification.is_out_of_scope:
             answer_text = OUT_OF_SCOPE_MESSAGE
         else:
-            retrieved = await _retrieve(payload.message, db=db, settings=settings)
+            # Anonymous visitors and users outside any organisation search public sources only.
+            retrieved = await _retrieve(
+                payload.message,
+                db=db,
+                settings=settings,
+                organization_id=user.organization_id if user else None,
+            )
             if not retrieved:
                 answer_text = INSUFFICIENT_EVIDENCE_MESSAGE
                 sources = []

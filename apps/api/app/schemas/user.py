@@ -22,6 +22,8 @@ class UserOut(BaseModel):
     display_name: str | None
     state_code: str | None
     preferred_language: str | None
+    # The tenant of an ENTERPRISE_USER (Phase 13); None for everyone else.
+    organization_id: uuid.UUID | None = None
 
 
 class UserUpdateRequest(BaseModel):

@@ -19,6 +19,8 @@ class IngestSourceRequest(BaseModel):
     state_code: str | None = Field(default=None, min_length=2, max_length=2)
     effective_date: date | None = None
     version: str | None = Field(default=None, max_length=50)
+    # Private to this organisation (tenant isolation); omit for a public source.
+    organization_id: uuid.UUID | None = None
 
     @field_validator("state_code")
     @classmethod
@@ -38,6 +40,7 @@ class LegalDocumentOut(BaseModel):
     document_type: DocumentType
     effective_date: date | None
     version: str | None
+    organization_id: uuid.UUID | None
     ingestion_status: IngestionStatus
     ingestion_error: str | None
     chunk_count: int

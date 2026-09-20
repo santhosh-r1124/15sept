@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -36,6 +36,19 @@ _RRF_K = 60
 # How many candidates each individual ranker (vector, keyword) contributes to
 # the fusion pool, before RRF picks the final top_k.
 _CANDIDATE_POOL = 20
+
+
+def visible_to(organization_id: uuid.UUID | None) -> ColumnElement[bool]:
+    """Which documents a caller may retrieve: every public one (no organisation), plus their own
+    organisation's private ones. Someone with no organisation - anonymous visitors, consumers,
+    advocates - sees public documents only. This is the tenant boundary: it is applied inside
+    every ranking query and again when the winning chunks are loaded, so one missed filter in
+    one place can't leak another organisation's text into an answer."""
+    if organization_id is None:
+        return LegalDocument.organization_id.is_(None)
+    return or_(
+        LegalDocument.organization_id.is_(None), LegalDocument.organization_id == organization_id
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,14 +77,26 @@ def reciprocal_rank_fusion[T](ranked_lists: Sequence[Sequence[T]], *, k: int = _
 
 
 async def _vector_ranked_ids(
-    query_vector: list[float], *, db: AsyncSession, limit: int
+    query_vector: list[float],
+    *,
+    db: AsyncSession,
+    limit: int,
+    organization_id: uuid.UUID | None,
 ) -> list[uuid.UUID]:
     distance = LegalChunk.embedding.cosine_distance(query_vector)
-    stmt = select(LegalChunk.id).order_by(distance).limit(limit)
+    stmt = (
+        select(LegalChunk.id)
+        .join(LegalDocument, LegalDocument.id == LegalChunk.document_id)
+        .where(visible_to(organization_id))
+        .order_by(distance)
+        .limit(limit)
+    )
     return list((await db.execute(stmt)).scalars().all())
 
 
-async def _keyword_ranked_ids(query: str, *, db: AsyncSession, limit: int) -> list[uuid.UUID]:
+async def _keyword_ranked_ids(
+    query: str, *, db: AsyncSession, limit: int, organization_id: uuid.UUID | None
+) -> list[uuid.UUID]:
     # plainto_tsquery treats the input as plain text tokens (not tsquery
     # syntax), so arbitrary user input can't raise a syntax error here; an
     # all-stopword/empty query safely produces an empty tsquery that matches
@@ -79,7 +104,8 @@ async def _keyword_ranked_ids(query: str, *, db: AsyncSession, limit: int) -> li
     tsquery = func.plainto_tsquery("english", query)
     stmt = (
         select(LegalChunk.id)
-        .where(LegalChunk.content_tsv.op("@@")(tsquery))
+        .join(LegalDocument, LegalDocument.id == LegalChunk.document_id)
+        .where(LegalChunk.content_tsv.op("@@")(tsquery), visible_to(organization_id))
         .order_by(func.ts_rank(LegalChunk.content_tsv, tsquery).desc())
         .limit(limit)
     )
@@ -87,11 +113,22 @@ async def _keyword_ranked_ids(query: str, *, db: AsyncSession, limit: int) -> li
 
 
 async def hybrid_search(
-    query: str, *, db: AsyncSession, settings: Settings, top_k: int = 6
+    query: str,
+    *,
+    db: AsyncSession,
+    settings: Settings,
+    organization_id: uuid.UUID | None,
+    top_k: int = 6,
 ) -> list[RetrievedChunk]:
+    """``organization_id`` is required on purpose (no default): every caller must decide whose
+    private documents may be searched - the asking user's organisation, or None for public-only."""
     query_vector = await embed_query(query, settings=settings)
-    vector_ids = await _vector_ranked_ids(query_vector, db=db, limit=_CANDIDATE_POOL)
-    keyword_ids = await _keyword_ranked_ids(query, db=db, limit=_CANDIDATE_POOL)
+    vector_ids = await _vector_ranked_ids(
+        query_vector, db=db, limit=_CANDIDATE_POOL, organization_id=organization_id
+    )
+    keyword_ids = await _keyword_ranked_ids(
+        query, db=db, limit=_CANDIDATE_POOL, organization_id=organization_id
+    )
 
     fused_ids = reciprocal_rank_fusion([vector_ids, keyword_ids])[:top_k]
     if not fused_ids:
@@ -100,7 +137,7 @@ async def hybrid_search(
     stmt = (
         select(LegalChunk, LegalDocument)
         .join(LegalDocument, LegalChunk.document_id == LegalDocument.id)
-        .where(LegalChunk.id.in_(fused_ids))
+        .where(LegalChunk.id.in_(fused_ids), visible_to(organization_id))  # belt and braces
     )
     rows = (await db.execute(stmt)).all()
     by_id = {chunk.id: (chunk, document) for chunk, document in rows}

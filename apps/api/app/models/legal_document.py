@@ -65,6 +65,12 @@ class LegalDocument(TimestampMixin, Base):
     # since it was last ingested, without storing the raw content itself.
     checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
+    # NULL = public: everyone's chat may cite it. Set = private to that organisation
+    # (tenant isolation, Phase 13) - only its members' retrieval may see it.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+
     ingestion_status: Mapped[IngestionStatus] = mapped_column(
         SAEnum(IngestionStatus, name="ingestion_status", native_enum=True),
         nullable=False,

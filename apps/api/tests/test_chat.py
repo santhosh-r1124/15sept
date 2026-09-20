@@ -63,7 +63,9 @@ def _patch_llm(
     async def fake_classify(message: str, *, settings: object) -> legal_classifier.Classification:
         return classification
 
-    async def fake_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
+    async def fake_search(
+        query: str, *, db: object, settings: object, organization_id: object
+    ) -> list[RetrievedChunk]:
         return resolved_retrieved
 
     async def fake_generate(
@@ -190,7 +192,9 @@ async def test_retrieval_unavailable_falls_back_to_insufficient_evidence(
 ) -> None:
     from app.core.errors import ServiceUnavailableError
 
-    async def raising_search(query: str, *, db: object, settings: object) -> list[RetrievedChunk]:
+    async def raising_search(
+        query: str, *, db: object, settings: object, organization_id: object
+    ) -> list[RetrievedChunk]:
         raise ServiceUnavailableError("no key", code="embeddings_not_configured")
 
     async def fake_classify(message: str, *, settings: object) -> legal_classifier.Classification:

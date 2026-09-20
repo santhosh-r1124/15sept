@@ -97,6 +97,7 @@ async def test_hybrid_search_fuses_vector_and_keyword_signals(
         "data fiduciary consent",
         db=db_txn_session,
         settings=get_settings(),  # type: ignore[arg-type]
+        organization_id=None,
     )
 
     assert len(results) == 2
@@ -116,5 +117,6 @@ async def test_hybrid_search_returns_empty_list_when_no_chunks_exist(
         "anything",
         db=db_txn_session,
         settings=get_settings(),  # type: ignore[arg-type]
+        organization_id=None,
     )
     assert results == []

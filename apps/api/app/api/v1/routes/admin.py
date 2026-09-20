@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 
 from app.api.deps import DbSession, SettingsDep, require_roles
@@ -20,6 +20,7 @@ from app.models.user import AdvocateProfile, User, UserRole, VerificationStatus
 from app.schemas.admin import PaginatedAdvocateProfiles, PaginatedUsers, UserActiveUpdateRequest
 from app.schemas.advocate import AdvocateProfileOut, AdvocateRejectRequest, AdvocateVerifyRequest
 from app.schemas.user import UserOut
+from app.services import audit
 from app.services.notifications import content as notice
 from app.services.notifications import deliver_request_emails, notify
 
@@ -67,7 +68,11 @@ async def list_users(
 
 @router.patch("/users/{user_id}", response_model=UserOut, summary="Activate or suspend a user")
 async def set_user_active(
-    user_id: uuid.UUID, payload: UserActiveUpdateRequest, admin: AdminUser, db: DbSession
+    user_id: uuid.UUID,
+    payload: UserActiveUpdateRequest,
+    admin: AdminUser,
+    db: DbSession,
+    request: Request,
 ) -> UserOut:
     user = await db.get(User, user_id)
     if user is None:
@@ -76,6 +81,14 @@ async def set_user_active(
         # An admin suspending themselves would lock the last person who can undo it out.
         raise ConflictError("You can't suspend your own account.", code="cannot_suspend_self")
     user.is_active = payload.is_active
+    audit.record(
+        db,
+        actor=admin,
+        action="user.reactivate" if payload.is_active else "user.suspend",
+        target_type="user",
+        target_id=user.id,
+        request=request,
+    )
     await db.commit()
     await db.refresh(user)
     return UserOut.model_validate(user)
@@ -123,9 +136,10 @@ async def list_pending_advocates(
 async def verify_advocate(
     profile_id: uuid.UUID,
     payload: AdvocateVerifyRequest,
-    _admin: AdminUser,
+    admin: AdminUser,
     db: DbSession,
     settings: SettingsDep,
+    request: Request,
 ) -> AdvocateProfileOut:
     profile = await db.get(AdvocateProfile, profile_id)
     if profile is None:
@@ -135,6 +149,14 @@ async def verify_advocate(
     advocate = await db.get(User, profile.user_id)
     if advocate is not None:
         await notify(db, settings, advocate, notice.advocate_verified())
+    audit.record(
+        db,
+        actor=admin,
+        action="advocate.verify",
+        target_type="advocate_profile",
+        target_id=profile.id,
+        request=request,
+    )
     await db.commit()
     await deliver_request_emails(db)
     await db.refresh(profile)
@@ -149,9 +171,10 @@ async def verify_advocate(
 async def reject_advocate(
     profile_id: uuid.UUID,
     payload: AdvocateRejectRequest,
-    _admin: AdminUser,
+    admin: AdminUser,
     db: DbSession,
     settings: SettingsDep,
+    request: Request,
 ) -> AdvocateProfileOut:
     profile = await db.get(AdvocateProfile, profile_id)
     if profile is None:
@@ -161,6 +184,14 @@ async def reject_advocate(
     advocate = await db.get(User, profile.user_id)
     if advocate is not None:
         await notify(db, settings, advocate, notice.advocate_rejected(note=payload.note))
+    audit.record(
+        db,
+        actor=admin,
+        action="advocate.reject",
+        target_type="advocate_profile",
+        target_id=profile.id,
+        request=request,
+    )
     await db.commit()
     await deliver_request_emails(db)
     await db.refresh(profile)

@@ -56,6 +56,12 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         default=True, server_default=text("true"), nullable=False
     )
+    # The tenant an ENTERPRISE_USER belongs to (Phase 13); None for everyone else.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL")
+    )
+    # Set when the person exercised their right to erasure; the row is then anonymised.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Opt-out for *notification* emails (Phase 11). Account emails (verify / reset) always send.
     email_notifications: Mapped[bool] = mapped_column(
         default=True, server_default=text("true"), nullable=False

@@ -7,6 +7,7 @@ Alembic autogenerate (see ``migrations/env.py``).
 from __future__ import annotations
 
 from app.db.base import Base
+from app.models.audit import AuditLog
 from app.models.call import MatterCall
 from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.document_request import AssistantDocumentType, DocumentRequest
@@ -18,6 +19,7 @@ from app.models.matter_document import (
     MatterFile,
 )
 from app.models.notification import EmailStatus, Notification, NotificationKind
+from app.models.organization import Organization
 from app.models.payment import Invoice, Payment, PaymentStatus, Refund
 from app.models.user import (
     AdvocateProfile,
@@ -32,6 +34,7 @@ from app.models.user import (
 __all__ = [
     "AdvocateProfile",
     "AssistantDocumentType",
+    "AuditLog",
     "Base",
     "ChatMessage",
     "Conversation",
@@ -54,6 +57,7 @@ __all__ = [
     "MessageRole",
     "Notification",
     "NotificationKind",
+    "Organization",
     "PasswordResetToken",
     "Payment",
     "PaymentStatus",

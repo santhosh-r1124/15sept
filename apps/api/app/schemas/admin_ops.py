@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.matter import MatterServiceType, MatterStatus
 from app.schemas.advocate import AdvocateProfileOut
@@ -98,3 +99,41 @@ class PaginatedQueryReviews(BaseModel):
 
 class ReviewRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    occurred_at: datetime
+    actor_id: uuid.UUID | None
+    actor_role: str | None
+    action: str
+    target_type: str | None
+    target_id: str | None
+    detail: dict[str, Any] | None
+    ip: str | None
+
+
+class PaginatedAuditLogs(BaseModel):
+    items: list[AuditLogOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class OrganizationCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+
+
+class OrganizationOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+    member_count: int
+    document_count: int  # private documents owned by this organisation
+
+
+class SetOrganizationRequest(BaseModel):
+    # None removes the user from their organisation.
+    organization_id: uuid.UUID | None

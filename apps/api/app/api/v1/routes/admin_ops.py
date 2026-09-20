@@ -15,34 +15,46 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.orm import aliased
 
 from app.api.deps import DbSession, require_roles
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError
+from app.models.audit import AuditLog
 from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.legal_document import IngestionStatus, LegalDocument
 from app.models.matter import Matter, MatterStatus
 from app.models.notification import EmailStatus, Notification
+from app.models.organization import Organization
 from app.models.payment import Payment
 from app.models.user import AdvocateProfile, User, UserRole, VerificationStatus
 from app.schemas.admin_ops import (
     AdminAdvocateOut,
     AdminMatterOut,
+    AuditLogOut,
+    OrganizationCreateRequest,
+    OrganizationOut,
     OverviewOut,
     PaginatedAdminAdvocates,
     PaginatedAdminMatters,
+    PaginatedAuditLogs,
     PaginatedQueryReviews,
     PaymentTotals,
     QueryReviewOut,
     ReviewRequest,
+    SetOrganizationRequest,
 )
 from app.schemas.advocate import AdvocateProfileOut
+from app.schemas.user import UserOut
+from app.services import audit
 
 router = APIRouter()
 
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.LEGAL_ADMIN))]
+# The audit trail is for the people who *hold* the privileged roles to be accountable to, so
+# legal ops (LEGAL_ADMIN) can act but cannot read the record of their own actions.
+SuperAdmin = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 
@@ -224,8 +236,9 @@ def _review_out(
     "/reviews", response_model=PaginatedQueryReviews, summary="High-risk chat queries to review"
 )
 async def list_reviews(
-    _admin: AdminUser,
+    admin: AdminUser,
     db: DbSession,
+    request: Request,
     status: Literal["pending", "reviewed", "all"] = "pending",
     risk_level: Literal["HIGH", "CRITICAL"] | None = None,
     limit: Limit = 25,
@@ -296,6 +309,16 @@ async def list_reviews(
         )
         for message, owner_id in rows
     ]
+    # Private chat content was just shown to an admin: that is exactly what an audit trail is for.
+    audit.record(
+        db,
+        actor=admin,
+        action="review.list",
+        target_type="chat_message",
+        detail={"status": status, "risk_level": risk_level, "returned": len(items)},
+        request=request,
+    )
+    await db.commit()
     return PaginatedQueryReviews(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -305,7 +328,11 @@ async def list_reviews(
     summary="Mark a high-risk query as reviewed (or update the note)",
 )
 async def review_query(
-    message_id: uuid.UUID, payload: ReviewRequest, admin: AdminUser, db: DbSession
+    message_id: uuid.UUID,
+    payload: ReviewRequest,
+    admin: AdminUser,
+    db: DbSession,
+    request: Request,
 ) -> QueryReviewOut:
     message = await db.scalar(
         select(ChatMessage).where(
@@ -320,6 +347,14 @@ async def review_query(
         message.reviewed_at = datetime.now(UTC)
         message.reviewed_by_id = admin.id
     message.review_note = payload.note
+    audit.record(
+        db,
+        actor=admin,
+        action="review.mark",
+        target_type="chat_message",
+        target_id=message.id,
+        request=request,
+    )
     await db.commit()
 
     owner_id = await db.scalar(
@@ -336,3 +371,171 @@ async def review_query(
         .limit(1)
     )
     return _review_out(message, owner_id, reply)
+
+
+# ---- the audit trail --------------------------------------------------------------------------
+
+
+@router.get(
+    "/audit-logs", response_model=PaginatedAuditLogs, summary="The audit trail (ADMIN only)"
+)
+async def list_audit_logs(
+    _admin: SuperAdmin,
+    db: DbSession,
+    action: Annotated[str | None, Query(max_length=60, description="Prefix, e.g. 'user.'")] = None,
+    actor_id: uuid.UUID | None = None,
+    target_id: Annotated[str | None, Query(max_length=64)] = None,
+    since: datetime | None = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+) -> PaginatedAuditLogs:
+    conditions: list[ColumnElement[bool]] = []
+    if action:
+        escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conditions.append(AuditLog.action.like(f"{escaped}%", escape="\\"))
+    if actor_id is not None:
+        conditions.append(AuditLog.actor_id == actor_id)
+    if target_id:
+        conditions.append(AuditLog.target_id == target_id)
+    if since is not None:
+        conditions.append(AuditLog.occurred_at >= since)
+
+    total = (
+        await db.execute(select(func.count()).select_from(AuditLog).where(*conditions))
+    ).scalar_one()
+    rows = (
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(*conditions)
+                .order_by(AuditLog.occurred_at.desc(), AuditLog.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return PaginatedAuditLogs(
+        items=[AuditLogOut.model_validate(r) for r in rows], total=total, limit=limit, offset=offset
+    )
+
+
+# ---- organisations (the tenant boundary) --------------------------------------------------------
+
+
+@router.post(
+    "/organizations",
+    response_model=OrganizationOut,
+    status_code=201,
+    summary="Create an organisation",
+)
+async def create_organization(
+    payload: OrganizationCreateRequest, admin: AdminUser, db: DbSession, request: Request
+) -> OrganizationOut:
+    name = " ".join(payload.name.split())
+    taken = await db.scalar(
+        select(Organization.id).where(func.lower(Organization.name) == name.lower())
+    )
+    if taken is not None:
+        raise ConflictError(
+            "An organisation with that name already exists.", code="organization_exists"
+        )
+    organization = Organization(name=name)
+    db.add(organization)
+    await db.flush()
+    audit.record(
+        db,
+        actor=admin,
+        action="org.create",
+        target_type="organization",
+        target_id=organization.id,
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(organization)
+    return OrganizationOut(
+        id=organization.id,
+        name=organization.name,
+        created_at=organization.created_at,
+        member_count=0,
+        document_count=0,
+    )
+
+
+@router.get("/organizations", response_model=list[OrganizationOut], summary="List organisations")
+async def list_organizations(_admin: AdminUser, db: DbSession) -> list[OrganizationOut]:
+    members = (
+        select(User.organization_id.label("org"), func.count().label("n"))
+        .where(User.organization_id.is_not(None))
+        .group_by(User.organization_id)
+        .subquery()
+    )
+    documents = (
+        select(LegalDocument.organization_id.label("org"), func.count().label("n"))
+        .where(LegalDocument.organization_id.is_not(None))
+        .group_by(LegalDocument.organization_id)
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(
+                Organization,
+                func.coalesce(members.c.n, 0),
+                func.coalesce(documents.c.n, 0),
+            )
+            .outerjoin(members, members.c.org == Organization.id)
+            .outerjoin(documents, documents.c.org == Organization.id)
+            .order_by(Organization.name)
+        )
+    ).all()
+    return [
+        OrganizationOut(
+            id=o.id, name=o.name, created_at=o.created_at, member_count=m, document_count=d
+        )
+        for o, m, d in rows
+    ]
+
+
+@router.put(
+    "/users/{user_id}/organization",
+    response_model=UserOut,
+    summary="Put a user in (or take them out of) an organisation",
+)
+async def set_user_organization(
+    user_id: uuid.UUID,
+    payload: SetOrganizationRequest,
+    admin: AdminUser,
+    db: DbSession,
+    request: Request,
+) -> UserOut:
+    """Membership is what lets an ENTERPRISE_USER search their organisation's private documents.
+    Only ordinary accounts can be moved: joining makes a CONSUMER an ENTERPRISE_USER, leaving makes
+    them a CONSUMER again. Advocates and admins are never converted by this call."""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise NotFoundError("User not found.")
+    if user.role not in (UserRole.CONSUMER, UserRole.ENTERPRISE_USER):
+        raise ConflictError(
+            "Only consumer accounts can belong to an organisation.", code="not_assignable"
+        )
+    if payload.organization_id is not None:
+        if await db.get(Organization, payload.organization_id) is None:
+            raise NotFoundError("Organization not found.")
+        user.organization_id = payload.organization_id
+        user.role = UserRole.ENTERPRISE_USER
+    else:
+        user.organization_id = None
+        user.role = UserRole.CONSUMER
+    audit.record(
+        db,
+        actor=admin,
+        action="user.organization.set",
+        target_type="user",
+        target_id=user.id,
+        detail={"organization_id": payload.organization_id},
+        request=request,
+    )
+    await db.commit()
+    await db.refresh(user)
+    return UserOut.model_validate(user)
