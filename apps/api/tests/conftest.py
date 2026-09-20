@@ -34,6 +34,9 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-use-0123456789")
+# Rate limits would trip the many tests that log in / register / chat from one address;
+# the rate-limit tests switch a limiter on explicitly.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 
 def unique_email(prefix: str = "test") -> str:

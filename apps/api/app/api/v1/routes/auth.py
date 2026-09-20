@@ -32,6 +32,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.email import send_password_reset_email, send_verification_email
+from app.services.rate_limit import rate_limit
 from app.services.tokens import issue_token_pair
 
 logger = get_logger("app.auth")
@@ -44,6 +45,7 @@ router = APIRouter()
     response_model=TokenPair,
     status_code=status.HTTP_201_CREATED,
     summary="Register a consumer account",
+    dependencies=[rate_limit("register", limit=5, window_seconds=3600)],
 )
 async def register(payload: RegisterRequest, db: DbSession, settings: SettingsDep) -> TokenPair:
     email = payload.email.lower()
@@ -76,7 +78,12 @@ async def register(payload: RegisterRequest, db: DbSession, settings: SettingsDe
     return await issue_token_pair(user=user, db=db, settings=settings)
 
 
-@router.post("/login", response_model=TokenPair, summary="Log in")
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    summary="Log in",
+    dependencies=[rate_limit("login", limit=10, window_seconds=60)],
+)
 async def login(payload: LoginRequest, db: DbSession, settings: SettingsDep) -> TokenPair:
     user = await db.scalar(select(User).where(User.email == payload.email.lower()))
     if user is None or not security.verify_password(payload.password, user.hashed_password):
@@ -88,7 +95,12 @@ async def login(payload: LoginRequest, db: DbSession, settings: SettingsDep) -> 
     return await issue_token_pair(user=user, db=db, settings=settings)
 
 
-@router.post("/refresh", response_model=TokenPair, summary="Rotate the access/refresh token pair")
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    summary="Rotate the access/refresh token pair",
+    dependencies=[rate_limit("refresh", limit=30, window_seconds=60)],
+)
 async def refresh(payload: RefreshRequest, db: DbSession, settings: SettingsDep) -> TokenPair:
     try:
         decoded = security.decode_token(
@@ -142,7 +154,12 @@ async def logout(payload: LogoutRequest, db: DbSession, settings: SettingsDep) -
     return MessageResponse(message="Logged out.")
 
 
-@router.post("/verify-email", response_model=MessageResponse, summary="Verify an email address")
+@router.post(
+    "/verify-email",
+    response_model=MessageResponse,
+    summary="Verify an email address",
+    dependencies=[rate_limit("verify-email", limit=20, window_seconds=3600)],
+)
 async def verify_email(payload: VerifyEmailRequest, db: DbSession) -> MessageResponse:
     token_hash = security.hash_token(payload.token)
     record = await db.scalar(
@@ -164,7 +181,10 @@ async def verify_email(payload: VerifyEmailRequest, db: DbSession) -> MessageRes
 
 
 @router.post(
-    "/resend-verification", response_model=MessageResponse, summary="Resend the verification email"
+    "/resend-verification",
+    response_model=MessageResponse,
+    summary="Resend the verification email",
+    dependencies=[rate_limit("resend-verification", limit=5, window_seconds=3600)],
 )
 async def resend_verification(
     payload: ResendVerificationRequest, db: DbSession, settings: SettingsDep
@@ -189,7 +209,10 @@ async def resend_verification(
 
 
 @router.post(
-    "/forgot-password", response_model=MessageResponse, summary="Request a password reset link"
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Request a password reset link",
+    dependencies=[rate_limit("forgot-password", limit=5, window_seconds=3600)],
 )
 async def forgot_password(
     payload: ForgotPasswordRequest, db: DbSession, settings: SettingsDep
@@ -210,7 +233,10 @@ async def forgot_password(
 
 
 @router.post(
-    "/reset-password", response_model=MessageResponse, summary="Reset password using a reset token"
+    "/reset-password",
+    response_model=MessageResponse,
+    summary="Reset password using a reset token",
+    dependencies=[rate_limit("reset-password", limit=10, window_seconds=3600)],
 )
 async def reset_password(payload: ResetPasswordRequest, db: DbSession) -> MessageResponse:
     token_hash = security.hash_token(payload.token)

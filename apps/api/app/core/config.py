@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     email_verification_ttl_hours: int = 24
     password_reset_ttl_hours: int = 1
 
+    # ---- Abuse protection (Phase 13) ---------------------------------------------
+    rate_limit_enabled: bool = True
+    # How many reverse proxies sit in front of the API (load balancer, CDN...). 0 = none: the
+    # client IP is the socket address and X-Forwarded-For is ignored, because anyone can forge it.
+    trusted_proxy_count: int = 0
+
     # ---- CORS ------------------------------------------------------
     # ``NoDecode`` stops pydantic-settings from JSON-parsing the env value; the
     # validator below accepts a comma-separated string or a JSON array.

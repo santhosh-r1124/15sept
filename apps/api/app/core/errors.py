@@ -89,6 +89,16 @@ class ServiceUnavailableError(AppError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
 
+class RateLimitedError(AppError):
+    code = "rate_limited"
+    message = "Too many requests. Please slow down and try again shortly."
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+
+    def __init__(self, *, retry_after: int, message: str | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def _request_id(request: Request) -> str:
     value = getattr(request.state, "request_id", None)
     return value if isinstance(value, str) else "-"
@@ -108,6 +118,7 @@ def build_error_body(
 
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    retry_after = getattr(exc, "retry_after", None)
     return JSONResponse(
         status_code=exc.status_code,
         content=build_error_body(
@@ -116,6 +127,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
             request_id=_request_id(request),
             details=exc.details,
         ),
+        headers={"Retry-After": str(retry_after)} if retry_after is not None else None,
     )
 
 

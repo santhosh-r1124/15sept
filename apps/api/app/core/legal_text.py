@@ -20,6 +20,14 @@ INSUFFICIENT_EVIDENCE_MESSAGE = (
 ADVOCATE_RECOMMENDATION_MESSAGE = "This matter may require advice from a qualified advocate."
 
 # Returned in place of a generated answer when the classifier flags is_out_of_scope.
+# Fixed reply when a message is plainly an attempt to hijack the assistant (Phase 13,
+# app.services.security.prompt_guard). No model is called for it.
+PROMPT_INJECTION_MESSAGE = (
+    "I can only help with general Indian legal information, and I can't follow instructions "
+    "that change how I work or ask how I'm set up. If you have a legal question, please ask "
+    "it directly."
+)
+
 OUT_OF_SCOPE_MESSAGE = (
     "I can only help with general Indian legal information, document guidance, "
     "and connecting you with an advocate. Could you rephrase your question as a "

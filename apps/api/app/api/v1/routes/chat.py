@@ -21,6 +21,7 @@ from app.core.legal_text import (
     INSUFFICIENT_EVIDENCE_MESSAGE,
     MANDATORY_DISCLAIMER,
     OUT_OF_SCOPE_MESSAGE,
+    PROMPT_INJECTION_MESSAGE,
 )
 from app.core.logging import get_logger
 from app.models.chat import ChatMessage, Conversation, MessageRole
@@ -36,6 +37,8 @@ from app.services import legal_classifier, risk_engine
 from app.services import llm as llm_service
 from app.services.rag import retrieval as retrieval_service
 from app.services.rag.retrieval import RetrievedChunk
+from app.services.rate_limit import rate_limit
+from app.services.security import prompt_guard
 
 router = APIRouter()
 logger = get_logger("app.chat")
@@ -87,7 +90,13 @@ def _source_dict(chunk: RetrievedChunk) -> dict[str, object]:
     }
 
 
-@router.post("/messages", response_model=SendMessageResponse, summary="Send a chat message")
+@router.post(
+    "/messages",
+    response_model=SendMessageResponse,
+    summary="Send a chat message",
+    # Every message is two paid LLM calls. Logged-in users get a higher ceiling.
+    dependencies=[rate_limit("chat", limit=30, window_seconds=60, anonymous_limit=10)],
+)
 async def send_message(
     payload: SendMessageRequest, user: OptionalUser, db: DbSession, settings: SettingsDep
 ) -> SendMessageResponse:
@@ -110,28 +119,43 @@ async def send_message(
     )
     db.add(user_message)
 
-    classification = await legal_classifier.classify_query(payload.message, settings=settings)
-    user_message.legal_category = classification.category
-    user_message.jurisdiction_scope = classification.jurisdiction_scope
-    user_message.is_out_of_scope = classification.is_out_of_scope
-    user_message.risk_level = classification.risk_level
+    assessment = prompt_guard.assess(payload.message)
+    if assessment.suspicious:
+        # Pattern names only - never the message itself.
+        logger.warning(
+            "prompt_injection_suspected", flags=list(assessment.flags), blocked=assessment.block
+        )
 
     sources: list[dict[str, object]] | None = None
-    if classification.is_out_of_scope:
-        answer_text = OUT_OF_SCOPE_MESSAGE
+    if assessment.block:
+        # Plainly aimed at the assistant, not a legal question: answer with a fixed message and
+        # call no model at all (nothing to hijack, nothing to pay for).
+        user_message.legal_category = "OUT_OF_SCOPE"
+        user_message.jurisdiction_scope = "UNKNOWN"
+        user_message.is_out_of_scope = True
+        answer_text = PROMPT_INJECTION_MESSAGE
     else:
-        retrieved = await _retrieve(payload.message, db=db, settings=settings)
-        if not retrieved:
-            answer_text = INSUFFICIENT_EVIDENCE_MESSAGE
-            sources = []
-        else:
-            answer_text = await llm_service.generate_grounded_answer(
-                payload.message, history=history, context=retrieved, settings=settings
-            )
-            sources = [_source_dict(chunk) for chunk in retrieved]
+        classification = await legal_classifier.classify_query(payload.message, settings=settings)
+        user_message.legal_category = classification.category
+        user_message.jurisdiction_scope = classification.jurisdiction_scope
+        user_message.is_out_of_scope = classification.is_out_of_scope
+        user_message.risk_level = classification.risk_level
 
-        if risk_engine.requires_advocate_recommendation(classification.risk_level):
-            answer_text = f"{answer_text}\n\n{ADVOCATE_RECOMMENDATION_MESSAGE}"
+        if classification.is_out_of_scope:
+            answer_text = OUT_OF_SCOPE_MESSAGE
+        else:
+            retrieved = await _retrieve(payload.message, db=db, settings=settings)
+            if not retrieved:
+                answer_text = INSUFFICIENT_EVIDENCE_MESSAGE
+                sources = []
+            else:
+                answer_text = await llm_service.generate_grounded_answer(
+                    payload.message, history=history, context=retrieved, settings=settings
+                )
+                sources = [_source_dict(chunk) for chunk in retrieved]
+
+            if risk_engine.requires_advocate_recommendation(classification.risk_level):
+                answer_text = f"{answer_text}\n\n{ADVOCATE_RECOMMENDATION_MESSAGE}"
 
     assistant_message = ChatMessage(
         conversation_id=conversation.id,

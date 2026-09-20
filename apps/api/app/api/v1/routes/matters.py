@@ -49,6 +49,7 @@ from app.services.matters.pricing import default_quote
 from app.services.notifications import content as notice
 from app.services.notifications import deliver_request_emails, notify
 from app.services.payments.ledger import record_payment, refund_matter_in_full
+from app.services.rate_limit import rate_limit
 
 router = APIRouter()
 
@@ -106,7 +107,13 @@ async def _commit_and_reload(db: DbSession, matter: Matter) -> MatterOut:
     return _to_out(await load_matter(db, matter_id))
 
 
-@router.post("", response_model=MatterOut, status_code=201, summary="Book an advocate")
+@router.post(
+    "",
+    response_model=MatterOut,
+    status_code=201,
+    summary="Book an advocate",
+    dependencies=[rate_limit("matter-create", limit=20, window_seconds=3600)],
+)
 async def create_matter(
     payload: CreateMatterRequest, user: ConsumerUser, db: DbSession, settings: SettingsDep
 ) -> MatterOut:
@@ -388,6 +395,7 @@ async def list_messages(
     response_model=MatterMessageOut,
     status_code=201,
     summary="Post a message",
+    dependencies=[rate_limit("matter-message", limit=30, window_seconds=60)],
 )
 async def post_message(
     matter_id: uuid.UUID,

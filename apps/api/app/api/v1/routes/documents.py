@@ -31,6 +31,7 @@ from app.schemas.document_assistant import (
 )
 from app.services.document_assistant import generation
 from app.services.document_assistant.questions import missing_required_answers, questions_for
+from app.services.rate_limit import rate_limit
 
 router = APIRouter()
 
@@ -55,7 +56,12 @@ async def list_document_types() -> list[DocumentTypeInfoOut]:
     ]
 
 
-@router.post("", response_model=CreateDocumentResponse, summary="Generate a document draft")
+@router.post(
+    "",
+    response_model=CreateDocumentResponse,
+    summary="Generate a document draft",
+    dependencies=[rate_limit("document-draft", limit=10, window_seconds=3600)],
+)
 async def create_document_request(
     payload: CreateDocumentRequestPayload, user: OptionalUser, db: DbSession, settings: SettingsDep
 ) -> CreateDocumentResponse:

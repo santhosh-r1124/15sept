@@ -32,6 +32,7 @@ from app.services.matters.access import load_matter, readable_by, require_actor
 from app.services.matters.lifecycle import Actor
 from app.services.notifications import content as notice
 from app.services.notifications import deliver_request_emails, notify
+from app.services.rate_limit import rate_limit
 from app.services.storage import (
     content_disposition,
     get_storage,
@@ -152,7 +153,11 @@ async def create_document_request(
 
 
 @router.post(
-    "/{matter_id}/files", response_model=MatterFileOut, status_code=201, summary="Upload a file"
+    "/{matter_id}/files",
+    response_model=MatterFileOut,
+    status_code=201,
+    summary="Upload a file",
+    dependencies=[rate_limit("matter-upload", limit=30, window_seconds=3600)],
 )
 async def upload_file(
     matter_id: uuid.UUID,

@@ -35,6 +35,7 @@ from app.schemas.advocate import (
 )
 from app.schemas.auth import TokenPair
 from app.services.email import send_verification_email
+from app.services.rate_limit import rate_limit
 from app.services.tokens import issue_token_pair
 
 router = APIRouter()
@@ -65,6 +66,7 @@ def _directory_entry(profile: AdvocateProfile) -> AdvocateDirectoryEntry:
     response_model=TokenPair,
     status_code=status.HTTP_201_CREATED,
     summary="Register as an advocate",
+    dependencies=[rate_limit("register", limit=5, window_seconds=3600)],
 )
 async def register_advocate(
     payload: AdvocateRegisterRequest, db: DbSession, settings: SettingsDep

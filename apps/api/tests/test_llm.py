@@ -139,6 +139,6 @@ async def test_generate_grounded_answer_includes_numbered_sources_in_the_prompt(
     messages = captured["messages"]
     assert isinstance(messages, list)
     prompt = messages[-1]["content"]
-    assert "[1]" in prompt
+    assert '<source n="1">' in prompt
     assert SAMPLE_CHUNK.document_title in prompt
     assert SAMPLE_CHUNK.content in prompt
