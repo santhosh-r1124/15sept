@@ -20,6 +20,7 @@ decision, numbered sequentially. Status: `Proposed` → `Accepted` →
 | 0012 | Payments: ledger, refunds, invoices (provider-agnostic) | Accepted |
 | 0013 | Notifications: in-app + email outbox, privacy-first emails, no SMS | Accepted |
 | 0014 | Admin & legal-ops dashboard: in apps/web, reviewers never see who asked, timestamp fix | Accepted |
+| 0015 | Voice & video consultations: WebRTC peer-to-peer, ticketed WebSocket signaling, no recording | Accepted |
 
 ## Template
 

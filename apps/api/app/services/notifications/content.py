@@ -167,6 +167,18 @@ def message_received(*, matter_id: uuid.UUID, title: str, sender_name: str | Non
     )
 
 
+def call_waiting(*, matter_id: uuid.UUID, title: str, who: str | None) -> Content:
+    name = who or "The other participant"
+    return Content(
+        NotificationKind.CALL_WAITING,
+        "Waiting in the consultation room",
+        _clip(f"{name} is waiting in the consultation room for “{title}”. Join now.", 500),
+        f"/matters/{matter_id}/call",
+        "Someone is waiting for you — Legal Advisor",
+        "The other person is waiting in your consultation room. Log in to join.",
+    )
+
+
 def document_requested(*, matter_id: uuid.UUID, title: str, description: str) -> Content:
     return Content(
         NotificationKind.DOCUMENT_REQUESTED,
@@ -241,6 +253,7 @@ __all__ = [
     "Content",
     "advocate_rejected",
     "advocate_verified",
+    "call_waiting",
     "document_requested",
     "document_uploaded",
     "format_inr",

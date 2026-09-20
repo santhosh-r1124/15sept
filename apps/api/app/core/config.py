@@ -81,6 +81,25 @@ class Settings(BaseSettings):
     email_verification_ttl_hours: int = 24
     password_reset_ttl_hours: int = 1
 
+    # ---- Voice / video consultations (WebRTC) -------------------------------------
+    # STUN lets each browser discover its public address; the default is Google's free public
+    # server (it sees connection metadata, never media). Use your own coturn to avoid that.
+    webrtc_stun_urls: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["stun:stun.l.google.com:19302"]
+    )
+    # TURN relays media for networks that block direct paths. Free if you run coturn yourself
+    # (infrastructure/deployment/coturn.conf.example); credentials are minted per user from the
+    # shared secret (coturn "use-auth-secret"), so nothing is stored.
+    webrtc_turn_urls: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    webrtc_turn_secret: str | None = None
+    webrtc_turn_ttl_seconds: int = 3600
+    # Force every call through TURN so the two parties never see each other's IP address.
+    webrtc_relay_only: bool = False
+    call_ticket_ttl_seconds: int = 60
+    call_join_early_minutes: int = 10
+    call_grace_minutes: int = 30
+    call_max_unscheduled_minutes: int = 180
+
     # ---- Abuse protection (Phase 13) ---------------------------------------------
     rate_limit_enabled: bool = True
     # How many reverse proxies sit in front of the API (load balancer, CDN...). 0 = none: the
@@ -149,7 +168,7 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     smtp_timeout_seconds: int = 10
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "webrtc_stun_urls", "webrtc_turn_urls", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:
         """Accept a comma-separated string or a JSON array as well as a list."""

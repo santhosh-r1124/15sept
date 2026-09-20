@@ -7,6 +7,7 @@ Alembic autogenerate (see ``migrations/env.py``).
 from __future__ import annotations
 
 from app.db.base import Base
+from app.models.call import MatterCall
 from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.document_request import AssistantDocumentType, DocumentRequest
 from app.models.legal_document import DocumentType, IngestionStatus, LegalChunk, LegalDocument
@@ -43,6 +44,7 @@ __all__ = [
     "LegalChunk",
     "LegalDocument",
     "Matter",
+    "MatterCall",
     "MatterDocumentRequest",
     "MatterDocumentRequestStatus",
     "MatterFile",

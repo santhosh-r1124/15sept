@@ -1,0 +1,44 @@
+# coturn (TURN/STUN relay) for consultation calls - free, self-hosted.
+#
+# Most calls connect browser-to-browser with STUN alone. A TURN relay is what makes calls work
+# for people behind strict NATs / corporate firewalls, and is required if WEBRTC_RELAY_ONLY=true
+# (which hides each party's IP address from the other). It relays *encrypted* media: it cannot
+# decrypt or record it.
+#
+# Needs a machine with a public IP and these ports open: 3478 (UDP+TCP), 5349 (TCP, for TLS),
+# and the relay range below (UDP). Install coturn (apt install coturn), copy this to
+# /etc/turnserver.conf, fill in the values, enable the service.
+#
+# The API mints short-lived per-user credentials from the shared secret ("REST API" scheme), so
+# nothing is stored and a leaked credential expires by itself. Set the SAME secret in the API:
+#   WEBRTC_TURN_URLS=turn:turn.your-domain.example:3478?transport=udp,turns:turn.your-domain.example:5349
+#   WEBRTC_TURN_SECRET=<the static-auth-secret below>
+
+listening-port=3478
+tls-listening-port=5349
+# The public address of this machine (and, if behind NAT, its private one: external/internal).
+external-ip=203.0.113.10
+realm=turn.your-domain.example
+
+use-auth-secret
+static-auth-secret=CHANGE-ME-long-random-string      # openssl rand -hex 32
+
+# TLS for turns: (a Let's Encrypt certificate for the TURN hostname).
+cert=/etc/letsencrypt/live/turn.your-domain.example/fullchain.pem
+pkey=/etc/letsencrypt/live/turn.your-domain.example/privkey.pem
+
+min-port=49160
+max-port=49200
+
+fingerprint
+no-multicast-peers
+no-cli
+# Do not let the relay be used to reach your own private network (SSRF-style abuse).
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+# Per-credential ceiling so one user can't saturate the relay.
+user-quota=4
+total-quota=200

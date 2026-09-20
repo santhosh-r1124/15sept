@@ -13,7 +13,7 @@ deliverable and builds on the previous one.
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ✅ Done |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ✅ Done |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ✅ Done |
-| 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (payment is a mock until Phase 10; no voice/video) |
+| 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (incl. voice/video calls — see "Voice & video" below) |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ✅ Done (files on local disk; platform fee defaults to 0 — needs owner decision) |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ✅ Done (ledger/refunds/invoices; gateway is a mock until the owner picks one; no tax computed) |
 | 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ✅ Done (in-app + email; SMS/OTP deliberately not built — paid provider, owner decision) |
@@ -221,8 +221,8 @@ deliverable and builds on the previous one.
   project owner's input (paid, regulated) — see
   [`docs/adr/0010-matter-lifecycle-and-payments.md`](adr/0010-matter-lifecycle-and-payments.md).
 - **Messaging**: a per-matter thread between consumer and advocate (polled by the UI), read-only
-  once the matter ends. **Not shipped**: voice/video (needs WebRTC signalling/TURN + a provider
-  choice) and document upload/exchange (Phase 9, the advocate portal).
+  once the matter ends. **Voice/video** was added afterwards (see "Voice & video consultations"
+  below) and document upload/exchange came with Phase 9, the advocate portal.
 - Frontend (`apps/web`): booking form on the advocate profile, `/matters`, `/matters/[id]` (status,
   pay / cancel, message thread). The advocate-side UI for accept/schedule/close is Phase 9 — the
   API actions already exist.
@@ -327,6 +327,30 @@ deliverable and builds on the previous one.
 - **Known gap**: no audit trail yet for admin actions or for reading chat content - `audit_logs` is
   Phase 13. Not built: bulk actions, role changes in the UI, editing advocate profiles, uploading
   a source file. Rationale: [`docs/adr/0014`](adr/0014-admin-and-legal-ops-dashboard.md).
+
+## Voice & video consultations (Phase 8 follow-up)
+
+- **Video and voice calls** between the client and the advocate for a paid consultation - the actual
+  consultation, not just its booking. WebRTC **browser to browser**: audio/video are encrypted end to end
+  and never touch our servers, **calls are not recorded**, and there is no per-minute cost (free STUN by
+  default; a self-hosted coturn TURN relay optional).
+- **API**: `POST /matters/{id}/call/session` (a one-minute, single-use ticket + ICE servers), `GET
+  /matters/{id}/call` (is the room open, who is in it, past calls) and the signaling WebSocket `WS
+  /matters/{id}/call/ws`. Only the two participants can join; the room opens 10 minutes before the booked
+  time and closes 30 minutes after it (paid-but-unscheduled consultations can be opened ad hoc, capped at 3 h).
+  The first person in notifies the other ("waiting in the consultation room").
+- **UI** (both apps): a call card on the matter page and a `/matters/[id]/call` room - join with video or
+  audio-only, mute / camera toggles, timer, leave, automatic reconnect and re-negotiation if the other side
+  refreshes. Calls are recorded as metadata only (`matter_calls`: who opened, when both were connected, how
+  long, why it ended). Migration `0013_matter_calls`.
+- **Verified** with 90 new backend tests (rules, ICE/TURN credentials against an independent OpenSSL
+  computation, tickets, hub, REST + database gatekeeper, and real WebSocket frames) and a live two-tab
+  check exchanging real WebRTC audio + video, leave / rejoin, and the recorded call. **Not yet tried on real
+  cameras / phones / different networks** - do that on staging.
+- **Needs**: HTTPS in production (browsers only allow the camera on secure origins), a TURN server if the
+  platform must work behind strict firewalls or hide IP addresses (`infrastructure/deployment/coturn.conf.example`),
+  and sticky routing (or a Redis relay) if the API runs on more than one instance. Not built: recording,
+  screen share, group calls, pre-call reminders. Rationale: [`docs/adr/0015`](adr/0015-voice-video-consultations.md).
 
 ## MVP scope (Phase 16)
 

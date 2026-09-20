@@ -14,7 +14,8 @@ routes users to a qualified advocate rather than acting as one.
 > an advocate recommendation on HIGH/CRITICAL), a document-drafting
 > assistant, advocate marketplace discovery, consultation booking, the advocate portal,
 > a payments ledger with refunds and invoices (the gateway is a mock until the owner picks a
-> provider), in-app + email notifications, and an admin & legal-ops dashboard — see the
+> provider), in-app + email notifications, an admin & legal-ops dashboard, and voice/video
+> consultations (WebRTC, not recorded) — see the
 > caveat below: no bulk corpus is loaded yet, so most chat answers are currently "insufficient
 > evidence" until real sources are ingested. See
 > [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and status,

@@ -56,6 +56,7 @@ def _all_contents() -> list[notice.Content]:
         notice.matter_scheduled(matter_id=MID, title=SECRET_TITLE, when=datetime.now(UTC)),
         notice.matter_closed(matter_id=MID, title=SECRET_TITLE),
         notice.message_received(matter_id=MID, title=SECRET_TITLE, sender_name="Asha"),
+        notice.call_waiting(matter_id=MID, title=SECRET_TITLE, who="Asha"),
         notice.document_requested(
             matter_id=MID, title=SECRET_TITLE, description="Marriage certificate"
         ),

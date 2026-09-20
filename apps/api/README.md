@@ -36,6 +36,7 @@ app/
 │   ├── matters/            # lifecycle state machine + fee quoting (Phase 8)
 │   ├── payments/           # provider protocol + mock, refund/invoice rules, ledger (Phase 8/10)
 │   ├── notifications/      # in-app rows + email outbox, wording (Phase 11)
+│   ├── calls/              # consultation call rules, ICE/TURN, tickets, signaling hub (video/voice)
 │   ├── storage/            # upload validation + local file storage (Phase 9)
 │   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
@@ -59,7 +60,8 @@ app/
             ├── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
             ├── payments.py          # payment/invoice views, admin refunds (Phase 10)
             ├── notifications.py     # in-app feed, mark read, email preference (Phase 11)
-            └── admin_ops.py         # overview, matters, advocate list, query review (Phase 12)
+            ├── admin_ops.py         # overview, matters, advocate list, query review (Phase 12)
+            └── calls.py             # video/voice consultation: session ticket + signaling WebSocket
 ```
 
 ## Develop
@@ -281,6 +283,20 @@ All ADMIN / LEGAL_ADMIN only. The dashboard UI is `/admin` in `apps/web`.
 
 Review results carry the question, the answer and the classification, never the asker's identity.
 See [`docs/adr/0014`](../../docs/adr/0014-admin-and-legal-ops-dashboard.md).
+
+## Voice & video consultations
+
+| Method & path | Does |
+| --- | --- |
+| `POST /matters/{id}/call/session` | A 60-second single-use ticket + ICE servers (participants of a paid consultation, when the room is open) |
+| `GET /matters/{id}/call` | Is the room open (`access`), who is in it now, the last calls with durations |
+| `WS /matters/{id}/call/ws?ticket=...` | Signaling relay (offers / answers / ICE candidates) between the two participants |
+
+Media is WebRTC browser to browser - it never reaches the API and is not recorded. STUN defaults to
+Google's free public server; set `WEBRTC_TURN_URLS` + `WEBRTC_TURN_SECRET` to add a self-hosted coturn relay
+(`infrastructure/deployment/coturn.conf.example`), and `WEBRTC_RELAY_ONLY=true` to hide the parties' IP
+addresses from each other. The signaling hub is in-process (single API instance, or sticky routing). See
+[`docs/adr/0015`](../../docs/adr/0015-voice-video-consultations.md).
 
 ## Migrations (Alembic)
 

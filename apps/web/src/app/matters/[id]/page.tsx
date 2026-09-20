@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
 import { DocumentsPanel } from '@/components/documents-panel';
+import { CallCard } from '@/components/call-card';
 import { PaymentCard } from '@/components/payment-card';
 import { useAuth } from '@/lib/auth-context';
 import { formatDateTime, formatInr, titleCase } from '@/lib/format';
@@ -174,6 +175,16 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
               </p>
             )}
           </div>
+
+          {accessToken && (
+            <CallCard
+              matterId={id}
+              token={accessToken}
+              status={matter.status}
+              serviceType={matter.service_type}
+              counterpart={matter.advocate.display_name ?? 'The advocate'}
+            />
+          )}
 
           {accessToken && (
             <PaymentCard matterId={id} token={accessToken} status={matter.status} />

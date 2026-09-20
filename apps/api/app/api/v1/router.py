@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     advocate_portal,
     advocates,
     auth,
+    calls,
     chat,
     documents,
     legal_sources,
@@ -35,6 +36,7 @@ api_router.include_router(
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(matters.router, prefix="/matters", tags=["matters"])
 api_router.include_router(matter_documents.router, prefix="/matters", tags=["matter-documents"])
+api_router.include_router(calls.router, prefix="/matters", tags=["calls"])
 api_router.include_router(advocate_portal.router, prefix="/advocates/me", tags=["advocate-portal"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

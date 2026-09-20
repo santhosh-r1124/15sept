@@ -3,6 +3,7 @@
 import { isTerminalMatterStatus } from '@legal-platform/shared';
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
+import { CallCard } from '@/components/call-card';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { MessagesPanel } from '@/components/messages-panel';
 import { PaymentCard } from '@/components/payment-card';
@@ -279,6 +280,13 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
             )}
           </section>
 
+          <CallCard
+            matterId={id}
+            token={accessToken}
+            status={matter.status}
+            serviceType={matter.service_type}
+            counterpart={matter.consumer.display_name ?? 'The client'}
+          />
           <PaymentCard matterId={id} token={accessToken} status={matter.status} />
           <DocumentsPanel
             matterId={id}
