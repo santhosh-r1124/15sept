@@ -46,6 +46,8 @@ from app.services.matters.lifecycle import (
     transition_for,
 )
 from app.services.matters.pricing import default_quote
+from app.services.notifications import content as notice
+from app.services.notifications import deliver_request_emails, notify
 from app.services.payments.ledger import record_payment, refund_matter_in_full
 
 router = APIRouter()
@@ -92,15 +94,21 @@ def _apply_action(matter: Matter, action: Action, actor: Actor) -> MatterStatus:
     return target
 
 
+def _counterpart(matter: Matter, actor: Actor) -> User:
+    """The other party to the matter - who should hear about what ``actor`` just did."""
+    return matter.advocate_profile.user if actor is Actor.CONSUMER else matter.consumer
+
+
 async def _commit_and_reload(db: DbSession, matter: Matter) -> MatterOut:
     matter_id = matter.id
     await db.commit()
+    await deliver_request_emails(db)  # the emails staged by notify(); never raises
     return _to_out(await load_matter(db, matter_id))
 
 
 @router.post("", response_model=MatterOut, status_code=201, summary="Book an advocate")
 async def create_matter(
-    payload: CreateMatterRequest, user: ConsumerUser, db: DbSession
+    payload: CreateMatterRequest, user: ConsumerUser, db: DbSession, settings: SettingsDep
 ) -> MatterOut:
     profile = await db.scalar(
         select(AdvocateProfile).where(
@@ -125,6 +133,16 @@ async def create_matter(
     )
     db.add(matter)
     await db.flush()
+    advocate = await db.get(User, profile.user_id)
+    if advocate is not None:
+        await notify(
+            db,
+            settings,
+            advocate,
+            notice.matter_requested(
+                matter_id=matter.id, title=matter.title, client_name=user.display_name
+            ),
+        )
     return await _commit_and_reload(db, matter)
 
 
@@ -178,7 +196,11 @@ async def get_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 
 @router.post("/{matter_id}/accept", response_model=MatterOut, summary="Advocate accepts")
 async def accept_matter(
-    matter_id: uuid.UUID, payload: AcceptMatterRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: AcceptMatterRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MatterOut:
     matter = await load_matter(db, matter_id, for_update=True)
     actor = require_actor(user, matter)
@@ -192,16 +214,42 @@ async def accept_matter(
     matter.quoted_fee = fee
     matter.decision_note = payload.note
     matter.status = target
+    await notify(
+        db,
+        settings,
+        matter.consumer,
+        notice.matter_accepted(
+            matter_id=matter.id,
+            title=matter.title,
+            advocate_name=user.display_name,
+            fee=matter.quoted_fee,
+        ),
+    )
     return await _commit_and_reload(db, matter)
 
 
 @router.post("/{matter_id}/reject", response_model=MatterOut, summary="Advocate rejects")
 async def reject_matter(
-    matter_id: uuid.UUID, payload: RejectMatterRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: RejectMatterRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MatterOut:
     matter = await load_matter(db, matter_id, for_update=True)
     matter.status = _apply_action(matter, Action.REJECT, require_actor(user, matter))
     matter.decision_note = payload.note
+    await notify(
+        db,
+        settings,
+        matter.consumer,
+        notice.matter_rejected(
+            matter_id=matter.id,
+            title=matter.title,
+            advocate_name=user.display_name,
+            note=payload.note,
+        ),
+    )
     return await _commit_and_reload(db, matter)
 
 
@@ -219,16 +267,28 @@ async def cancel_matter(
     matter.status = _apply_action(matter, Action.CANCEL, actor)
     if payload.note:
         matter.decision_note = payload.note
+    refund = None
     if was_paid:
         # Cancelling a paid matter returns the client's money in full, in the same transaction:
         # if the provider refuses the refund the cancellation is rolled back with it.
-        await refund_matter_in_full(
+        refund = await refund_matter_in_full(
             db,
             settings,
             matter,
             reason=f"Matter cancelled by the {actor.value.lower()}.",
             initiated_by_id=user.id,
         )
+    await notify(
+        db,
+        settings,
+        _counterpart(matter, actor),
+        notice.matter_cancelled(
+            matter_id=matter.id,
+            title=matter.title,
+            cancelled_by=actor.value.lower(),
+            refunded=refund.amount if refund else None,
+        ),
+    )
     return await _commit_and_reload(db, matter)
 
 
@@ -242,12 +302,27 @@ async def pay_matter(
     matter.payment_reference = payment.provider_reference
     matter.paid_at = datetime.now(UTC)
     matter.status = target
+    await notify(
+        db,
+        settings,
+        matter.advocate_profile.user,
+        notice.matter_paid(
+            matter_id=matter.id,
+            title=matter.title,
+            client_name=user.display_name,
+            amount=payment.amount,
+        ),
+    )
     return await _commit_and_reload(db, matter)
 
 
 @router.post("/{matter_id}/schedule", response_model=MatterOut, summary="Schedule a consultation")
 async def schedule_matter(
-    matter_id: uuid.UUID, payload: ScheduleMatterRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: ScheduleMatterRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MatterOut:
     matter = await load_matter(db, matter_id, for_update=True)
     target = _apply_action(matter, Action.SCHEDULE, require_actor(user, matter))
@@ -264,14 +339,25 @@ async def schedule_matter(
         )
     matter.scheduled_at = when
     matter.status = target
+    await notify(
+        db,
+        settings,
+        matter.consumer,
+        notice.matter_scheduled(matter_id=matter.id, title=matter.title, when=when),
+    )
     return await _commit_and_reload(db, matter)
 
 
 @router.post("/{matter_id}/close", response_model=MatterOut, summary="Advocate closes the matter")
-async def close_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> MatterOut:
+async def close_matter(
+    matter_id: uuid.UUID, user: CurrentUser, db: DbSession, settings: SettingsDep
+) -> MatterOut:
     matter = await load_matter(db, matter_id, for_update=True)
     matter.status = _apply_action(matter, Action.CLOSE, require_actor(user, matter))
     matter.closed_at = datetime.now(UTC)
+    await notify(
+        db, settings, matter.consumer, notice.matter_closed(matter_id=matter.id, title=matter.title)
+    )
     return await _commit_and_reload(db, matter)
 
 
@@ -304,16 +390,29 @@ async def list_messages(
     summary="Post a message",
 )
 async def post_message(
-    matter_id: uuid.UUID, payload: PostMessageRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: PostMessageRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MatterMessageOut:
     matter = await load_matter(db, matter_id)
-    require_actor(user, matter)
+    actor = require_actor(user, matter)
     if not can_post_message(matter.status):
         raise ConflictError(
             "This matter is closed; its message thread is read-only.", code="matter_closed"
         )
     message = MatterMessage(matter_id=matter.id, sender_id=user.id, body=payload.body)
     db.add(message)
+    await notify(
+        db,
+        settings,
+        _counterpart(matter, actor),
+        notice.message_received(
+            matter_id=matter.id, title=matter.title, sender_name=user.display_name
+        ),
+        coalesce=True,  # a run of messages is one bell entry until it's read
+    )
     await db.commit()
     await db.refresh(message)
     return _message_out(message, matter)

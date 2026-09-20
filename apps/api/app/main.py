@@ -18,6 +18,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
 from app.middleware.request_context import RequestContextMiddleware
+from app.services.email import configure_email_sender
 from app.services.redis import close_redis
 
 logger = get_logger("app.main")
@@ -26,6 +27,7 @@ logger = get_logger("app.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
+    configure_email_sender(settings)
     logger.info(
         "api_starting",
         environment=settings.app_env.value,

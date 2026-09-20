@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { NotificationBell } from '@/components/notification-bell';
 import { useAuth } from '@/lib/auth-context';
 
 export function SiteHeader() {
@@ -30,6 +31,7 @@ export function SiteHeader() {
               <Link href="/payments" className="text-slate-600 hover:text-slate-900">
                 Payments
               </Link>
+              <NotificationBell />
               <Link href="/profile" className="text-slate-600 hover:text-slate-900">
                 {user.display_name || user.email}
               </Link>

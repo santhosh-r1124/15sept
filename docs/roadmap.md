@@ -16,7 +16,7 @@ deliverable and builds on the previous one.
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (payment is a mock until Phase 10; no voice/video) |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ✅ Done (files on local disk; platform fee defaults to 0 — needs owner decision) |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ✅ Done (ledger/refunds/invoices; gateway is a mock until the owner picks one; no tax computed) |
-| 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ⬜ Not started |
+| 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ✅ Done (in-app + email; SMS/OTP deliberately not built — paid provider, owner decision) |
 | 12    | Admin & Legal Ops Dashboard   | User/advocate/RAG-source management, high-risk query review       | ⬜ Not started |
 | 13    | Security & Compliance         | Hardening: rate limiting, prompt-injection defence, audit logs, tenant isolation | ⬜ Not started |
 | 14    | Testing                       | Unit + integration + browser E2E coverage                        | 🟡 Scaffolding only |
@@ -280,6 +280,30 @@ deliverable and builds on the previous one.
   Rationale: [`docs/adr/0012`](adr/0012-payments-ledger-refunds-invoices.md). Migration `0010_payments`.
   Verified live in a browser against real Postgres: pay -> invoice -> consumer cancel -> refunded;
   advocate cancel -> refunded and earnings drop out.
+
+## Phase 11 — what shipped
+
+- **In-app notifications** (`/api/v1/notifications`): a feed, unread count (the header bell), mark
+  one / all read, and an email on/off preference. Written in the *same transaction* as the action
+  they announce, so a rolled-back action never leaves a phantom notification.
+- **Events covered**: booking request, accepted, rejected, cancelled (with refund), paid, scheduled,
+  closed, new message, document requested / uploaded, admin refund, advocate verified / rejected.
+- **Email** through the existing `EmailSender` protocol, now with a real `SmtpEmailSender`
+  (`EMAIL_BACKEND=smtp`; any SMTP server - a free Gmail/Outlook app-password account works - and no
+  paid service is required). The default `console` backend just logs.
+- **Emails carry no matter details** - a generic sentence plus a link into the right app (portal for
+  advocates, web for clients). Titles, fees, dates and message text stay in-app behind login.
+- **Outbox**: the email is a column set on the notification row; delivery happens after commit, a
+  failure leaves it PENDING (retried by `python -m app.scripts.send_pending_emails`, given up on
+  after 5 tries) and pauses inline sending for a minute, so a dead mail server never breaks or slows
+  requests. Bursts of chat messages collapse into one unread bell entry.
+- Frontends: `NotificationBell` in both headers (polls every 30 s - no push channel yet) and a
+  `/notifications` page in both apps. Migration `0011_notifications`.
+- **Not built, on purpose**: SMS and phone OTP. Every Indian route is a paid, DLT-registered
+  provider - an owner decision. Email-link verification (Phase 1) already covers account
+  verification at no cost. Reminders ("your consultation is in 1 hour") need a scheduler, which
+  arrives with deployment in Phase 15.
+  Rationale: [`docs/adr/0013`](adr/0013-notifications-in-app-and-email-outbox.md).
 
 ## MVP scope (Phase 16)
 

@@ -30,6 +30,8 @@ from app.schemas.matter_document import (
 )
 from app.services.matters.access import load_matter, readable_by, require_actor
 from app.services.matters.lifecycle import Actor
+from app.services.notifications import content as notice
+from app.services.notifications import deliver_request_emails, notify
 from app.services.storage import (
     content_disposition,
     get_storage,
@@ -121,7 +123,11 @@ async def list_documents(
     summary="Advocate asks the client for a document",
 )
 async def create_document_request(
-    matter_id: uuid.UUID, payload: CreateDocumentRequestRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: CreateDocumentRequestRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> DocumentRequestOut:
     matter = await load_matter(db, matter_id)
     if require_actor(user, matter) is not Actor.ADVOCATE:
@@ -131,7 +137,16 @@ async def create_document_request(
         matter_id=matter.id, requested_by_id=user.id, description=payload.description
     )
     db.add(request)
+    await notify(
+        db,
+        settings,
+        matter.consumer,
+        notice.document_requested(
+            matter_id=matter.id, title=matter.title, description=payload.description
+        ),
+    )
     await db.commit()
+    await deliver_request_emails(db)
     await db.refresh(request)
     return _request_out(request)
 
@@ -191,6 +206,14 @@ async def upload_file(
     db.add(record)
     if fulfilled is not None:
         fulfilled.status = MatterDocumentRequestStatus.FULFILLED
+    recipient = matter.advocate_profile.user if actor is Actor.CONSUMER else matter.consumer
+    await notify(
+        db,
+        settings,
+        recipient,
+        notice.document_uploaded(matter_id=matter.id, title=matter.title, is_final=is_final),
+        coalesce=True,
+    )
     await db.commit()
     await db.refresh(record)
     return _file_out(record, matter)

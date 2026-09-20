@@ -30,6 +30,8 @@ from app.schemas.payment import (
     RefundRequest,
 )
 from app.services.matters.access import ADMIN_ROLES, load_matter, readable_by
+from app.services.notifications import content as notice
+from app.services.notifications import deliver_request_emails, notify
 from app.services.payments.invoice import render_invoice_html
 from app.services.payments.ledger import get_payment_for_update, issue_refund
 
@@ -257,7 +259,7 @@ async def admin_refund_payment(
     payment = await get_payment_for_update(db, payment_id)
     if payment is None:
         raise NotFoundError("Payment not found.")
-    await issue_refund(
+    refund = await issue_refund(
         db,
         settings,
         payment,
@@ -265,6 +267,21 @@ async def admin_refund_payment(
         reason=payload.reason,
         initiated_by_id=admin.id,
     )
+    payer = await db.get(User, payment.payer_id)
+    matter_title = await db.scalar(select(Matter.title).where(Matter.id == payment.matter_id))
+    if payer is not None and matter_title is not None:
+        await notify(
+            db,
+            settings,
+            payer,
+            notice.refund_issued(
+                matter_id=payment.matter_id,
+                title=matter_title,
+                amount=refund.amount,
+                reason=payload.reason,
+            ),
+        )
     await db.commit()
+    await deliver_request_emails(db)
     await db.refresh(payment)
     return _payment_out(payment, await _refunds(db, payment.id))

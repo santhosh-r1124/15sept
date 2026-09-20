@@ -35,6 +35,7 @@ app/
 │   ├── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
 │   ├── matters/            # lifecycle state machine + fee quoting (Phase 8)
 │   ├── payments/           # provider protocol + mock, refund/invoice rules, ledger (Phase 8/10)
+│   ├── notifications/      # in-app rows + email outbox, wording (Phase 11)
 │   ├── storage/            # upload validation + local file storage (Phase 9)
 │   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
@@ -56,7 +57,8 @@ app/
             ├── matters.py    # book an advocate, accept/pay/schedule/close, message thread
             ├── matter_documents.py  # document requests, file upload/download (Phase 9)
             ├── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
-            └── payments.py          # payment/invoice views, admin refunds (Phase 10)
+            ├── payments.py          # payment/invoice views, admin refunds (Phase 10)
+            └── notifications.py     # in-app feed, mark read, email preference (Phase 11)
 ```
 
 ## Develop
@@ -247,6 +249,21 @@ Uploads: PDF / Word / PNG / JPEG / text only, validated by declared type *and* m
 `PAYMENT_PROVIDER=mock` is the only provider today and is refused when `APP_ENV=production`; a
 real gateway implements `PaymentProvider` (`charge`, `refund`). No tax is computed on invoices.
 See [`docs/adr/0012`](../../docs/adr/0012-payments-ledger-refunds-invoices.md).
+
+## Notifications (Phase 11)
+
+| Method & path | Does |
+| --- | --- |
+| `GET /notifications` | Your feed, newest first (`unread_only`, `limit`, `offset`); includes `unread` |
+| `GET /notifications/unread-count` | Just the number (the header bell polls this) |
+| `POST /notifications/{id}/read` · `POST /notifications/read-all` | Mark read (someone else's id is a 404) |
+| `GET` / `PUT /notifications/preferences` | `{"email_notifications": bool}` |
+
+Notifications are created by the routes that cause them - there is no create endpoint. Email:
+`EMAIL_BACKEND=console` (default) logs, `smtp` sends via `SMTP_*` (any server; a free
+Gmail/Outlook app-password works). A failed send stays PENDING in the `notifications` outbox;
+drain it from cron with `uv run python -m app.scripts.send_pending_emails`. Emails never include
+matter details. See [`docs/adr/0013`](../../docs/adr/0013-notifications-in-app-and-email-outbox.md).
 
 ## Migrations (Alembic)
 

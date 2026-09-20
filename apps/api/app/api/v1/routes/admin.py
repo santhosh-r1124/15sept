@@ -14,12 +14,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 
-from app.api.deps import DbSession, require_roles
+from app.api.deps import DbSession, SettingsDep, require_roles
 from app.core.errors import NotFoundError
 from app.models.user import AdvocateProfile, User, UserRole, VerificationStatus
 from app.schemas.admin import PaginatedAdvocateProfiles, PaginatedUsers, UserActiveUpdateRequest
 from app.schemas.advocate import AdvocateProfileOut, AdvocateRejectRequest, AdvocateVerifyRequest
 from app.schemas.user import UserOut
+from app.services.notifications import content as notice
+from app.services.notifications import deliver_request_emails, notify
 
 router = APIRouter()
 
@@ -106,14 +108,22 @@ async def list_pending_advocates(
     summary="Approve an advocate",
 )
 async def verify_advocate(
-    profile_id: uuid.UUID, payload: AdvocateVerifyRequest, _admin: AdminUser, db: DbSession
+    profile_id: uuid.UUID,
+    payload: AdvocateVerifyRequest,
+    _admin: AdminUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> AdvocateProfileOut:
     profile = await db.get(AdvocateProfile, profile_id)
     if profile is None:
         raise NotFoundError("Advocate profile not found.")
     profile.verification_status = VerificationStatus.VERIFIED
     profile.verification_note = payload.note
+    advocate = await db.get(User, profile.user_id)
+    if advocate is not None:
+        await notify(db, settings, advocate, notice.advocate_verified())
     await db.commit()
+    await deliver_request_emails(db)
     await db.refresh(profile)
     return AdvocateProfileOut.model_validate(profile)
 
@@ -124,13 +134,21 @@ async def verify_advocate(
     summary="Reject an advocate",
 )
 async def reject_advocate(
-    profile_id: uuid.UUID, payload: AdvocateRejectRequest, _admin: AdminUser, db: DbSession
+    profile_id: uuid.UUID,
+    payload: AdvocateRejectRequest,
+    _admin: AdminUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> AdvocateProfileOut:
     profile = await db.get(AdvocateProfile, profile_id)
     if profile is None:
         raise NotFoundError("Advocate profile not found.")
     profile.verification_status = VerificationStatus.REJECTED
     profile.verification_note = payload.note
+    advocate = await db.get(User, profile.user_id)
+    if advocate is not None:
+        await notify(db, settings, advocate, notice.advocate_rejected(note=payload.note))
     await db.commit()
+    await deliver_request_emails(db)
     await db.refresh(profile)
     return AdvocateProfileOut.model_validate(profile)

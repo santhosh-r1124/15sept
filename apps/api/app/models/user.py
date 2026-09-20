@@ -56,6 +56,10 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         default=True, server_default=text("true"), nullable=False
     )
+    # Opt-out for *notification* emails (Phase 11). Account emails (verify / reset) always send.
+    email_notifications: Mapped[bool] = mapped_column(
+        default=True, server_default=text("true"), nullable=False
+    )
 
     advocate_profile: Mapped[AdvocateProfile | None] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"

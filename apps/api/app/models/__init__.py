@@ -16,6 +16,7 @@ from app.models.matter_document import (
     MatterDocumentRequestStatus,
     MatterFile,
 )
+from app.models.notification import EmailStatus, Notification, NotificationKind
 from app.models.payment import Invoice, Payment, PaymentStatus, Refund
 from app.models.user import (
     AdvocateProfile,
@@ -35,6 +36,7 @@ __all__ = [
     "Conversation",
     "DocumentRequest",
     "DocumentType",
+    "EmailStatus",
     "EmailVerificationToken",
     "IngestionStatus",
     "Invoice",
@@ -48,6 +50,8 @@ __all__ = [
     "MatterServiceType",
     "MatterStatus",
     "MessageRole",
+    "Notification",
+    "NotificationKind",
     "PasswordResetToken",
     "Payment",
     "PaymentStatus",

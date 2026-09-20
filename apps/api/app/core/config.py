@@ -126,6 +126,22 @@ class Settings(BaseSettings):
     # ---- Frontend (Phase 1+) ------------------------------------------
     # Base URL used to build links inside emails (verify-email, reset-password).
     frontend_base_url: str = "http://localhost:3000"
+    # Where advocates land (notification emails to an advocate link into the portal).
+    portal_base_url: str = "http://localhost:3001"
+
+    # ---- Email (Phase 11) ----------------------------------------------------
+    # "console" logs the email instead of sending it (free, needs no account). "smtp" sends via
+    # any SMTP server - a free Gmail/Outlook app-password account works for low volume, or a
+    # provider's free tier. No paid service is required or assumed.
+    email_backend: Literal["console", "smtp"] = "console"
+    email_from: str = "Legal Advisor <no-reply@localhost>"
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    # STARTTLS on the submission port (587). Set false only for a local relay on a trusted network.
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: int = 10
 
     @field_validator("cors_origins", mode="before")
     @classmethod
