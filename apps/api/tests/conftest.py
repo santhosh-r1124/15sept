@@ -143,7 +143,14 @@ async def db_client(db_txn_session):
     app = create_app()
 
     async def _override() -> AsyncIterator[object]:
-        yield db_txn_session
+        # Mirror app.db.session.get_session: roll back on an error so a request that fails
+        # part-way (e.g. a payment provider outage after the matter's status was changed
+        # in memory) leaves nothing behind, exactly as in production.
+        try:
+            yield db_txn_session
+        except Exception:
+            await db_txn_session.rollback()
+            raise
 
     app.dependency_overrides[db_session_dependency] = _override
 

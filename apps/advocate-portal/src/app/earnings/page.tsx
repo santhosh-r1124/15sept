@@ -92,6 +92,11 @@ export default function EarningsPage() {
                           {titleCase(i.status)}
                         </span>
                         {formatInr(i.amount)}
+                        {Number(i.refunded) > 0 && (
+                          <span className="text-xs text-amber-700">
+                            (−{formatInr(i.refunded)} refunded)
+                          </span>
+                        )}
                       </span>
                     </Link>
                   </li>

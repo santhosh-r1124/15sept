@@ -9,8 +9,11 @@ requested action is allowed for this actor, and only then mutates and persists.
         |--reject--> REJECTED |--cancel--> CANCELLED
         \--cancel--> CANCELLED
 
-PAID matters can't be cancelled yet: unwinding a payment needs the refund flow (Phase 10),
-so until then a paid matter can only move forward (schedule/close).
+Cancelling a paid matter unwinds the payment (Phase 10 refunds), so who may do it is a
+policy: the **advocate** can always cancel a paid or scheduled matter (they can't deliver, the
+client is refunded in full); the **consumer** can cancel a paid *consultation* that hasn't been
+scheduled yet, but not a paid document service (work may have started) and not a scheduled
+consultation - those go to an admin, who can refund any amount.
 """
 
 from __future__ import annotations
@@ -36,6 +39,9 @@ class Action(enum.StrEnum):
     CLOSE = "CLOSE"
 
 
+# Statuses in which money has changed hands - cancelling from one of these must refund.
+PAID_STATUSES = frozenset({MatterStatus.PAID, MatterStatus.SCHEDULED})
+
 TERMINAL_STATUSES = frozenset({MatterStatus.CLOSED, MatterStatus.REJECTED, MatterStatus.CANCELLED})
 
 # (action, actor, from_status) -> to_status
@@ -46,6 +52,9 @@ _TRANSITIONS: dict[tuple[Action, Actor, MatterStatus], MatterStatus] = {
     (Action.CANCEL, Actor.CONSUMER, MatterStatus.ACCEPTED): MatterStatus.CANCELLED,
     (Action.CANCEL, Actor.ADVOCATE, MatterStatus.ACCEPTED): MatterStatus.CANCELLED,
     (Action.PAY, Actor.CONSUMER, MatterStatus.ACCEPTED): MatterStatus.PAID,
+    (Action.CANCEL, Actor.CONSUMER, MatterStatus.PAID): MatterStatus.CANCELLED,
+    (Action.CANCEL, Actor.ADVOCATE, MatterStatus.PAID): MatterStatus.CANCELLED,
+    (Action.CANCEL, Actor.ADVOCATE, MatterStatus.SCHEDULED): MatterStatus.CANCELLED,
     (Action.SCHEDULE, Actor.ADVOCATE, MatterStatus.PAID): MatterStatus.SCHEDULED,
     # Rescheduling: SCHEDULED -> SCHEDULED.
     (Action.SCHEDULE, Actor.ADVOCATE, MatterStatus.SCHEDULED): MatterStatus.SCHEDULED,
@@ -71,6 +80,9 @@ def transition_for(
         return None
     if action is Action.CLOSE and current is MatterStatus.PAID and is_consultation:
         return None
+    # A consumer can only walk away from a paid *consultation* (see module docstring).
+    if action is Action.CANCEL and actor is Actor.CONSUMER and current is MatterStatus.PAID:
+        return target if is_consultation else None
     return target
 
 

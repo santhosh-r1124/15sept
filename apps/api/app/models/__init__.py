@@ -16,6 +16,7 @@ from app.models.matter_document import (
     MatterDocumentRequestStatus,
     MatterFile,
 )
+from app.models.payment import Invoice, Payment, PaymentStatus, Refund
 from app.models.user import (
     AdvocateProfile,
     EmailVerificationToken,
@@ -36,6 +37,7 @@ __all__ = [
     "DocumentType",
     "EmailVerificationToken",
     "IngestionStatus",
+    "Invoice",
     "LegalChunk",
     "LegalDocument",
     "Matter",
@@ -47,7 +49,10 @@ __all__ = [
     "MatterStatus",
     "MessageRole",
     "PasswordResetToken",
+    "Payment",
+    "PaymentStatus",
     "RefreshToken",
+    "Refund",
     "User",
     "UserRole",
     "VerificationStatus",

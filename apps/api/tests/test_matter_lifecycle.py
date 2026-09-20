@@ -59,9 +59,18 @@ def test_advocate_cannot_cancel_before_accepting_and_consumer_cannot_accept() ->
     assert transition_for(Action.PAY, Actor.ADVOCATE, M.ACCEPTED, CONSULT) is None
 
 
-def test_paid_matters_cannot_be_cancelled_until_refunds_exist() -> None:
-    for actor in Actor:
-        assert transition_for(Action.CANCEL, actor, M.PAID, CONSULT) is None
+def test_advocate_can_cancel_a_paid_or_scheduled_matter() -> None:
+    for service in S:
+        assert transition_for(Action.CANCEL, Actor.ADVOCATE, M.PAID, service) is M.CANCELLED
+        assert transition_for(Action.CANCEL, Actor.ADVOCATE, M.SCHEDULED, service) is M.CANCELLED
+
+
+def test_consumer_can_walk_away_from_a_paid_consultation_only_before_it_is_scheduled() -> None:
+    assert transition_for(Action.CANCEL, Actor.CONSUMER, M.PAID, CONSULT) is M.CANCELLED
+    # Not a paid document service (work may have started) and not a scheduled consultation:
+    # those need an admin (who can refund any amount).
+    assert transition_for(Action.CANCEL, Actor.CONSUMER, M.PAID, DOC) is None
+    assert transition_for(Action.CANCEL, Actor.CONSUMER, M.SCHEDULED, CONSULT) is None
 
 
 @pytest.mark.parametrize(("action", "actor", "service"), list(product(Action, Actor, S)))

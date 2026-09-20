@@ -38,9 +38,15 @@ from app.services.matters.access import (
     readable_by,
     require_actor,
 )
-from app.services.matters.lifecycle import Action, Actor, can_post_message, transition_for
+from app.services.matters.lifecycle import (
+    PAID_STATUSES,
+    Action,
+    Actor,
+    can_post_message,
+    transition_for,
+)
 from app.services.matters.pricing import default_quote
-from app.services.payments import get_payment_provider
+from app.services.payments.ledger import record_payment, refund_matter_in_full
 
 router = APIRouter()
 
@@ -174,7 +180,7 @@ async def get_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 async def accept_matter(
     matter_id: uuid.UUID, payload: AcceptMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await load_matter(db, matter_id)
+    matter = await load_matter(db, matter_id, for_update=True)
     actor = require_actor(user, matter)
     target = _apply_action(matter, Action.ACCEPT, actor)
     fee = payload.quoted_fee if payload.quoted_fee is not None else matter.quoted_fee
@@ -193,7 +199,7 @@ async def accept_matter(
 async def reject_matter(
     matter_id: uuid.UUID, payload: RejectMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await load_matter(db, matter_id)
+    matter = await load_matter(db, matter_id, for_update=True)
     matter.status = _apply_action(matter, Action.REJECT, require_actor(user, matter))
     matter.decision_note = payload.note
     return await _commit_and_reload(db, matter)
@@ -201,12 +207,28 @@ async def reject_matter(
 
 @router.post("/{matter_id}/cancel", response_model=MatterOut, summary="Cancel a matter")
 async def cancel_matter(
-    matter_id: uuid.UUID, payload: CancelMatterRequest, user: CurrentUser, db: DbSession
+    matter_id: uuid.UUID,
+    payload: CancelMatterRequest,
+    user: CurrentUser,
+    db: DbSession,
+    settings: SettingsDep,
 ) -> MatterOut:
-    matter = await load_matter(db, matter_id)
-    matter.status = _apply_action(matter, Action.CANCEL, require_actor(user, matter))
+    matter = await load_matter(db, matter_id, for_update=True)
+    actor = require_actor(user, matter)
+    was_paid = matter.status in PAID_STATUSES
+    matter.status = _apply_action(matter, Action.CANCEL, actor)
     if payload.note:
         matter.decision_note = payload.note
+    if was_paid:
+        # Cancelling a paid matter returns the client's money in full, in the same transaction:
+        # if the provider refuses the refund the cancellation is rolled back with it.
+        await refund_matter_in_full(
+            db,
+            settings,
+            matter,
+            reason=f"Matter cancelled by the {actor.value.lower()}.",
+            initiated_by_id=user.id,
+        )
     return await _commit_and_reload(db, matter)
 
 
@@ -214,16 +236,10 @@ async def cancel_matter(
 async def pay_matter(
     matter_id: uuid.UUID, user: CurrentUser, db: DbSession, settings: SettingsDep
 ) -> MatterOut:
-    matter = await load_matter(db, matter_id)
+    matter = await load_matter(db, matter_id, for_update=True)
     target = _apply_action(matter, Action.PAY, require_actor(user, matter))
-    if matter.quoted_fee is None:  # ACCEPTED always carries a quote; belt and braces
-        raise ConflictError("This matter has no fee quote to pay.", code="no_quote")
-
-    provider = get_payment_provider(settings)
-    result = await provider.charge(
-        amount=matter.quoted_fee, description=matter.title, idempotency_key=str(matter.id)
-    )
-    matter.payment_reference = result.reference
+    payment, _invoice = await record_payment(db, settings, matter, user)
+    matter.payment_reference = payment.provider_reference
     matter.paid_at = datetime.now(UTC)
     matter.status = target
     return await _commit_and_reload(db, matter)
@@ -233,7 +249,7 @@ async def pay_matter(
 async def schedule_matter(
     matter_id: uuid.UUID, payload: ScheduleMatterRequest, user: CurrentUser, db: DbSession
 ) -> MatterOut:
-    matter = await load_matter(db, matter_id)
+    matter = await load_matter(db, matter_id, for_update=True)
     target = _apply_action(matter, Action.SCHEDULE, require_actor(user, matter))
     when = payload.scheduled_at
     if when.tzinfo is None:
@@ -253,7 +269,7 @@ async def schedule_matter(
 
 @router.post("/{matter_id}/close", response_model=MatterOut, summary="Advocate closes the matter")
 async def close_matter(matter_id: uuid.UUID, user: CurrentUser, db: DbSession) -> MatterOut:
-    matter = await load_matter(db, matter_id)
+    matter = await load_matter(db, matter_id, for_update=True)
     matter.status = _apply_action(matter, Action.CLOSE, require_actor(user, matter))
     matter.closed_at = datetime.now(UTC)
     return await _commit_and_reload(db, matter)

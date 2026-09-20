@@ -20,6 +20,7 @@ from app.api.deps import DbSession, SettingsDep, require_roles
 from app.core.errors import NotFoundError
 from app.models.matter import Matter, MatterMessage, MatterServiceType, MatterStatus
 from app.models.matter_document import MatterDocumentRequest, MatterDocumentRequestStatus
+from app.models.payment import Payment
 from app.models.user import AdvocateProfile, User, UserRole
 from app.schemas.advocate_portal import (
     AdvocateDashboardOut,
@@ -51,7 +52,7 @@ async def _profile_id(db: DbSession, user: User) -> uuid.UUID:
 
 
 def _summary_out(
-    rows: list[tuple[MatterStatus, Decimal | None]], fee_percent: Decimal
+    rows: list[tuple[MatterStatus, Decimal | None, Decimal]], fee_percent: Decimal
 ) -> EarningsSummaryOut:
     summary = summarize_earnings(rows, fee_percent)
     return EarningsSummaryOut(
@@ -134,9 +135,9 @@ async def dashboard(
 
     money_rows = (
         await db.execute(
-            select(Matter.status, Matter.quoted_fee).where(
-                mine, Matter.status.in_(EARNED_STATUSES + PENDING_STATUSES)
-            )
+            select(Matter.status, Matter.quoted_fee, func.coalesce(Payment.refunded_amount, 0))
+            .outerjoin(Payment, Payment.matter_id == Matter.id)
+            .where(mine, Matter.status.in_(EARNED_STATUSES + PENDING_STATUSES))
         )
     ).all()
 
@@ -156,7 +157,9 @@ async def dashboard(
             )
             for m in upcoming
         ],
-        earnings=_summary_out([(s, a) for s, a in money_rows], settings.platform_fee_percent),
+        earnings=_summary_out(
+            [(s, a, Decimal(r)) for s, a, r in money_rows], settings.platform_fee_percent
+        ),
     )
 
 
@@ -164,33 +167,32 @@ async def dashboard(
 async def earnings(user: AdvocateUser, db: DbSession, settings: SettingsDep) -> EarningsOut:
     pid = await _profile_id(db, user)
     rows = (
-        (
-            await db.execute(
-                select(Matter)
-                .where(
-                    Matter.advocate_profile_id == pid,
-                    Matter.status.in_(EARNED_STATUSES + PENDING_STATUSES),
-                    Matter.quoted_fee.is_not(None),
-                )
-                .order_by(Matter.paid_at.desc().nulls_last(), Matter.created_at.desc())
+        await db.execute(
+            select(Matter, func.coalesce(Payment.refunded_amount, 0))
+            .outerjoin(Payment, Payment.matter_id == Matter.id)
+            .where(
+                Matter.advocate_profile_id == pid,
+                Matter.status.in_(EARNED_STATUSES + PENDING_STATUSES),
+                Matter.quoted_fee.is_not(None),
             )
+            .order_by(Matter.paid_at.desc().nulls_last(), Matter.created_at.desc())
         )
-        .scalars()
-        .all()
-    )
+    ).all()
     return EarningsOut(
         summary=_summary_out(
-            [(m.status, m.quoted_fee) for m in rows], settings.platform_fee_percent
+            [(m.status, m.quoted_fee, Decimal(r)) for m, r in rows],
+            settings.platform_fee_percent,
         ),
         items=[
             EarningsLineItemOut(
                 matter_id=m.id,
                 title=m.title,
                 amount=m.quoted_fee,
+                refunded=Decimal(r),
                 status=m.status,
                 paid_at=m.paid_at,
                 closed_at=m.closed_at,
             )
-            for m in rows
+            for m, r in rows
         ],
     )

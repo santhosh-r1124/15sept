@@ -192,10 +192,11 @@ async def test_illegal_transitions_are_409(db_client: AsyncClient, db_txn_sessio
     await _act(db_client, mid, "accept", advocate)
     await _act(db_client, mid, "pay", consumer)
 
-    # Paid: can't pay twice, can't cancel, can't close a consultation before it's scheduled.
+    # Paid: can't pay twice, can't close a consultation before it's scheduled, and the
+    # advocate (not the client) is the one who closes.
     assert (await _act(db_client, mid, "pay", consumer)).status_code == 409
-    assert (await _act(db_client, mid, "cancel", consumer)).status_code == 409
     assert (await _act(db_client, mid, "close", advocate)).status_code == 409
+    assert (await _act(db_client, mid, "close", consumer)).status_code == 409
     resp = await _act(db_client, mid, "pay", consumer)
     assert resp.json()["error"]["code"] == "invalid_transition"
 

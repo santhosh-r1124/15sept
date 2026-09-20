@@ -42,6 +42,7 @@ class EarningsLineItemOut(BaseModel):
     matter_id: uuid.UUID
     title: str
     amount: Decimal
+    refunded: Decimal
     status: MatterStatus
     paid_at: datetime | None
     closed_at: datetime | None

@@ -32,17 +32,20 @@ class EarningsSummary:
 
 
 def summarize_earnings(
-    rows: Iterable[tuple[MatterStatus, Decimal | None]], fee_percent: Decimal
+    rows: Iterable[tuple[MatterStatus, Decimal | None, Decimal]], fee_percent: Decimal
 ) -> EarningsSummary:
+    """``rows`` are (status, amount charged, amount refunded). Refunds come off the advocate's
+    figure - a matter refunded in full earns nothing, a partly refunded one earns the rest."""
     earned = Decimal(0)
     pending = Decimal(0)
-    for status, amount in rows:
+    for status, amount, refunded in rows:
         if amount is None:
             continue
+        kept = max(amount - refunded, Decimal(0))
         if status in EARNED_STATUSES:
-            earned += amount
+            earned += kept
         elif status in PENDING_STATUSES:
-            pending += amount
+            pending += kept
     fee = (earned * fee_percent / _HUNDRED).quantize(_CENT, rounding=ROUND_HALF_UP)
     return EarningsSummary(
         gross_earned=earned.quantize(_CENT),

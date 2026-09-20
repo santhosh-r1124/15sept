@@ -89,6 +89,71 @@ async function authedRaw(path: string, token: string, init: RequestInit = {}): P
   return response;
 }
 
+export interface RefundOut {
+  id: string;
+  amount: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface PaymentOut {
+  id: string;
+  matter_id: string;
+  amount: string;
+  refunded_amount: string;
+  currency: string;
+  status: 'SUCCEEDED' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+  provider: string;
+  created_at: string;
+  refunds: RefundOut[];
+}
+
+export interface InvoiceOut {
+  id: string;
+  invoice_number: string;
+  matter_id: string;
+  description: string;
+  client_name: string;
+  advocate_name: string;
+  amount: string;
+  refunded_amount: string;
+  currency: string;
+  issued_at: string;
+}
+
+export interface MatterPaymentOut {
+  payment: PaymentOut;
+  invoice: InvoiceOut;
+}
+
+export interface PaymentSummaryOut {
+  payment_id: string;
+  matter_id: string;
+  matter_title: string;
+  invoice_id: string;
+  invoice_number: string;
+  amount: string;
+  refunded_amount: string;
+  currency: string;
+  status: 'SUCCEEDED' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+  created_at: string;
+}
+
+export interface PaginatedPayments {
+  items: PaymentSummaryOut[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Invoices are HTML pages served by the API. Fetched with the Bearer header and opened from a
+ * blob URL - which, unlike the HTTP response, carries no Content-Security-Policy header - so the
+ * same lock-down is injected as a <meta> tag before it is opened.
+ */
+const INVOICE_CSP =
+  '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">';
+
 export interface CreateMatterPayload {
   advocate_id: string;
   service_type: MatterServiceType;
@@ -156,5 +221,17 @@ export const matterClient = {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  },
+  payment: (id: string, token: string) =>
+    apiFetch<MatterPaymentOut>(`/api/v1/payments/matters/${id}`, { token }),
+
+  listPayments: (token: string) =>
+    apiFetch<PaginatedPayments>('/api/v1/payments/mine?limit=100', { token }),
+
+  async openInvoice(invoiceId: string, token: string): Promise<void> {
+    const response = await authedRaw(`/api/v1/payments/invoices/${invoiceId}/html`, token);
+    const html = (await response.text()).replace('<head>', `<head>${INVOICE_CSP}`);
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    window.open(url, '_blank', 'noopener');
   },
 };

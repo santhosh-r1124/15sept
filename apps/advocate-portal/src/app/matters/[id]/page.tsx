@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { MessagesPanel } from '@/components/messages-panel';
+import { PaymentCard } from '@/components/payment-card';
 import { ApiRequestError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { formatDateTime, formatInr, STATUS_STYLES, titleCase } from '@/lib/format';
@@ -77,6 +78,12 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
     body: Record<string, unknown> = {},
   ) {
     if (!accessToken || busy) return;
+    if (
+      action === 'cancel' &&
+      (matter?.status === 'PAID' || matter?.status === 'SCHEDULED') &&
+      !window.confirm('Cancel this matter? The client will be refunded in full.')
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -238,6 +245,19 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
                     </button>
                   </div>
                 )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={secondaryBtn}
+                    disabled={busy}
+                    onClick={() => void act('cancel')}
+                  >
+                    Cancel &amp; refund client
+                  </button>
+                  <span className="text-xs text-slate-400">
+                    Only if you can no longer deliver — the client is refunded in full.
+                  </span>
+                </div>
                 {(status === 'SCHEDULED' || !isConsultation) && (
                   <div className="flex items-center gap-2">
                     <button
@@ -259,6 +279,7 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
             )}
           </section>
 
+          <PaymentCard matterId={id} token={accessToken} status={matter.status} />
           <DocumentsPanel
             matterId={id}
             token={accessToken}

@@ -15,7 +15,7 @@ deliverable and builds on the previous one.
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ✅ Done |
 | 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (payment is a mock until Phase 10; no voice/video) |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ✅ Done (files on local disk; platform fee defaults to 0 — needs owner decision) |
-| 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ⬜ Not started |
+| 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ✅ Done (ledger/refunds/invoices; gateway is a mock until the owner picks one; no tax computed) |
 | 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ⬜ Not started |
 | 12    | Admin & Legal Ops Dashboard   | User/advocate/RAG-source management, high-risk query review       | ⬜ Not started |
 | 13    | Security & Compliance         | Hardening: rate limiting, prompt-injection defence, audit logs, tenant isolation | ⬜ Not started |
@@ -258,6 +258,28 @@ deliverable and builds on the previous one.
 - Migration `0009_matter_documents`. Verified live in a browser against real Postgres:
   accept -> request document -> client uploads -> download -> schedule -> final upload -> close ->
   earnings.
+
+## Phase 10 — what shipped
+
+- **Payment ledger**: one `payments` row per matter, an append-only `refunds` table, and a
+  snapshotted `invoices` row (numbered `INV-2026-000001` from a database sequence). Pure money
+  rules in `app/services/payments/rules.py`; the only writer is `ledger.py`.
+- **Refunds**: cancelling a paid matter refunds it in full *in the same transaction* (a provider
+  failure rolls the cancel back, so a matter is never cancelled-but-unrefunded); admins can refund
+  fully or partially (`POST /api/v1/admin/payments/{id}/refund`). Status-changing matter routes now
+  take a row lock, so concurrent cancels can't double-refund.
+- **Who can cancel a paid matter**: the advocate always (client refunded in full); the consumer only
+  a paid *consultation* before it is scheduled - not a document service, and not once scheduled.
+- **Invoices**: HTML view served with a locked-down CSP, `nosniff`, `no-store`, everything
+  escaped, participants + admins only. **No GST/tax is computed** - the invoice says so.
+- **Earnings are net of refunds**; the portal shows the refund on each line.
+- Frontends: payment card + invoice link on both matter pages, a consumer `/payments` page, and a
+  "Cancel & refund client" action in the portal.
+- **Needs your decision before launch**: the payment gateway (paid, KYC/regulated), GST/tax
+  treatment, and how advocate payouts are settled - nothing here moves money to advocates.
+  Rationale: [`docs/adr/0012`](adr/0012-payments-ledger-refunds-invoices.md). Migration `0010_payments`.
+  Verified live in a browser against real Postgres: pay -> invoice -> consumer cancel -> refunded;
+  advocate cancel -> refunded and earnings drop out.
 
 ## MVP scope (Phase 16)
 

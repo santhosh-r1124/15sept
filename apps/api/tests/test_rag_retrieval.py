@@ -67,7 +67,7 @@ async def test_hybrid_search_fuses_vector_and_keyword_signals(
         checksum="abc",
     )
     db_txn_session.add(document)  # type: ignore[attr-defined]
-    await db_txn_session.flush()  # type: ignore[attr-defined]
+    await db_txn_session.commit()  # type: ignore[attr-defined]
 
     # relevant: matches the query both semantically (vector) and lexically
     # ("data fiduciary" appears verbatim).
@@ -86,7 +86,7 @@ async def test_hybrid_search_fuses_vector_and_keyword_signals(
         embedding=[0.0] * 767 + [1.0],
     )
     db_txn_session.add_all([relevant, unrelated])  # type: ignore[attr-defined]
-    await db_txn_session.flush()  # type: ignore[attr-defined]
+    await db_txn_session.commit()  # type: ignore[attr-defined]
 
     async def fake_embed_query(query: str, *, settings: object) -> list[float]:
         return relevant_vector

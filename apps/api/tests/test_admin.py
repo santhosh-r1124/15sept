@@ -24,7 +24,7 @@ async def _admin_headers(db_txn_session: object, role: UserRole = UserRole.ADMIN
         email_verified=True,
     )
     db_txn_session.add(user)  # type: ignore[attr-defined]
-    await db_txn_session.flush()  # type: ignore[attr-defined]
+    await db_txn_session.commit()  # type: ignore[attr-defined]
     token = security.create_access_token(user_id=user.id, role=role.value, settings=get_settings())
     return {"Authorization": f"Bearer {token}"}
 

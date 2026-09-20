@@ -34,7 +34,7 @@ app/
 │   ├── ingestion/          # fetch/extract/clean/chunk/embed/search (Phase 3)
 │   ├── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
 │   ├── matters/            # lifecycle state machine + fee quoting (Phase 8)
-│   ├── payments/           # PaymentProvider interface + mock (Phase 8; gateway in Phase 10)
+│   ├── payments/           # provider protocol + mock, refund/invoice rules, ledger (Phase 8/10)
 │   ├── storage/            # upload validation + local file storage (Phase 9)
 │   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
@@ -55,7 +55,8 @@ app/
             ├── documents.py  # document types/questions, generate/list/get drafts
             ├── matters.py    # book an advocate, accept/pay/schedule/close, message thread
             ├── matter_documents.py  # document requests, file upload/download (Phase 9)
-            └── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
+            ├── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
+            └── payments.py          # payment/invoice views, admin refunds (Phase 10)
 ```
 
 ## Develop
@@ -232,6 +233,20 @@ Uploads: PDF / Word / PNG / JPEG / text only, validated by declared type *and* m
 10 MB cap (`UPLOAD_MAX_BYTES`), stored under server-generated names in `UPLOAD_DIR`
 (default `./uploads`, local disk). `PLATFORM_FEE_PERCENT` (default 0) is the platform's cut of
 *earned* amounts. See [`docs/adr/0011`](../../docs/adr/0011-advocate-portal-documents-and-earnings.md).
+
+## Payments (Phase 10)
+
+| Method & path | Does |
+| --- | --- |
+| `GET /payments/matters/{id}` | The matter's payment (with refunds) and invoice |
+| `GET /payments/mine` | Payments you made (client) or received (advocate) |
+| `GET /payments/invoices/{id}` / `/html` | Invoice as JSON / as a locked-down HTML page |
+| `GET /admin/payments` | All payments (admin roles) |
+| `POST /admin/payments/{id}/refund` | Full or partial refund (`amount` optional, `reason` required) |
+
+`PAYMENT_PROVIDER=mock` is the only provider today and is refused when `APP_ENV=production`; a
+real gateway implements `PaymentProvider` (`charge`, `refund`). No tax is computed on invoices.
+See [`docs/adr/0012`](../../docs/adr/0012-payments-ledger-refunds-invoices.md).
 
 ## Migrations (Alembic)
 

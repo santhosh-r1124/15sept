@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
 import { DocumentsPanel } from '@/components/documents-panel';
+import { PaymentCard } from '@/components/payment-card';
 import { useAuth } from '@/lib/auth-context';
 import { formatDateTime, formatInr, titleCase } from '@/lib/format';
 import {
@@ -54,6 +55,12 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
 
   async function act(action: 'pay' | 'cancel') {
     if (!accessToken || busy) return;
+    if (
+      action === 'cancel' &&
+      matter?.status === 'PAID' &&
+      !window.confirm('Cancel this consultation? You will be refunded in full.')
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -147,7 +154,9 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
                     Pay {formatInr(matter.quoted_fee)}
                   </button>
                 )}
-                {(matter.status === 'REQUESTED' || matter.status === 'ACCEPTED') && (
+                {(matter.status === 'REQUESTED' ||
+                  matter.status === 'ACCEPTED' ||
+                  (matter.status === 'PAID' && matter.service_type === 'CONSULTATION')) && (
                   <button
                     type="button"
                     onClick={() => void act('cancel')}
@@ -165,6 +174,10 @@ export default function MatterPage({ params }: { params: Promise<{ id: string }>
               </p>
             )}
           </div>
+
+          {accessToken && (
+            <PaymentCard matterId={id} token={accessToken} status={matter.status} />
+          )}
 
           {accessToken && (
             <DocumentsPanel

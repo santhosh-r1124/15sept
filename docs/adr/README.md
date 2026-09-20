@@ -17,6 +17,7 @@ decision, numbered sequentially. Status: `Proposed` → `Accepted` →
 | 0009 | Document Assistant: static questionnaire, not RAG-grounded, failures not persisted | Accepted |
 | 0010 | Matter lifecycle state machine, fee quoting, payments stub (mock, refused in prod) | Accepted |
 | 0011 | Advocate portal: document exchange, local file storage + upload validation, earnings rules | Accepted |
+| 0012 | Payments: ledger, refunds, invoices (provider-agnostic) | Accepted |
 
 ## Template
 

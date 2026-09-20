@@ -26,13 +26,23 @@ MATTER_LOAD_OPTIONS = (
 )
 
 
-async def load_matter(db: AsyncSession, matter_id: uuid.UUID) -> Matter:
-    matter = await db.scalar(
+async def load_matter(
+    db: AsyncSession, matter_id: uuid.UUID, *, for_update: bool = False
+) -> Matter:
+    """Load a matter with its consumer and advocate. Pass ``for_update=True`` from any route
+    that changes its status, so two concurrent requests (a double-clicked Pay, say) serialise
+    on the row instead of both passing the state-machine check."""
+    stmt = (
         select(Matter)
         .options(*MATTER_LOAD_OPTIONS)
         .where(Matter.id == matter_id)
         .execution_options(populate_existing=True)
     )
+    if for_update:
+        # of=Matter: lock only the matter row (the eager-loaded users/profiles are separate
+        # SELECTs anyway, but be explicit).
+        stmt = stmt.with_for_update(of=Matter)
+    matter = await db.scalar(stmt)
     if matter is None:
         raise NotFoundError("Matter not found.")
     return matter

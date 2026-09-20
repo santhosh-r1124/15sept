@@ -27,6 +27,9 @@ export function SiteHeader() {
               <Link href="/matters" className="text-slate-600 hover:text-slate-900">
                 My matters
               </Link>
+              <Link href="/payments" className="text-slate-600 hover:text-slate-900">
+                Payments
+              </Link>
               <Link href="/profile" className="text-slate-600 hover:text-slate-900">
                 {user.display_name || user.email}
               </Link>

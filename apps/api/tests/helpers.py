@@ -78,7 +78,7 @@ async def make_admin(session: Any, role: UserRole = UserRole.ADMIN) -> Account:
         email_verified=True,
     )
     session.add(user)
-    await session.flush()
+    await session.commit()
     token = security.create_access_token(user_id=user.id, role=role.value, settings=get_settings())
     return Account(headers=_bearer(token), user_id=str(user.id))
 
