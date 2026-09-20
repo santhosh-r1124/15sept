@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     admin,
+    admin_ops,
     advocate_portal,
     advocates,
     auth,
@@ -26,6 +27,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(advocates.router, prefix="/advocates", tags=["advocates"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(admin_ops.router, prefix="/admin", tags=["admin-ops"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(
     legal_sources.router, prefix="/admin/legal-sources", tags=["legal-sources"]

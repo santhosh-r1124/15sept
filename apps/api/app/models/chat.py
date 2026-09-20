@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -86,11 +86,24 @@ class ChatMessage(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
+    # Legal-ops review of HIGH/CRITICAL queries (Phase 12). Only ever set on the user's message.
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    review_note: Mapped[str | None] = mapped_column(Text)
+
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
     __table_args__ = (
         Index("ix_chat_messages_conversation_id", "conversation_id"),
         Index("ix_chat_messages_risk_level", "risk_level"),
+        # The review queue: unreviewed high-risk queries, oldest first.
+        Index(
+            "ix_chat_messages_review_queue",
+            "created_at",
+            postgresql_where=text("risk_level IN ('HIGH', 'CRITICAL') AND reviewed_at IS NULL"),
+        ),
     )
 
     def __repr__(self) -> str:  # pragma: no cover

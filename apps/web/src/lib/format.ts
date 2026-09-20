@@ -14,8 +14,19 @@ export function formatInr(amount: string | null): string {
   return amount ? `₹${amount}` : '—';
 }
 
+const HAS_OFFSET = /(Z|[+-]\d{2}:?\d{2})$/i;
+
+/**
+ * The API sends some timestamps (`created_at`, `updated_at`) as UTC *without* an offset
+ * ("2026-09-20T08:05:12"). `new Date()` reads an offset-less string as *local* time, which shows
+ * an Indian user every such time 5½ hours early - so treat it as UTC explicitly.
+ */
+export function parseApiDate(iso: string): Date {
+  return new Date(HAS_OFFSET.test(iso) ? iso : `${iso}Z`);
+}
+
 export function formatDateTime(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : '—';
+  return iso ? parseApiDate(iso).toLocaleString() : '—';
 }
 
 export function formatBytes(bytes: number): string {

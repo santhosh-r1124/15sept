@@ -17,7 +17,7 @@ deliverable and builds on the previous one.
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ✅ Done (files on local disk; platform fee defaults to 0 — needs owner decision) |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ✅ Done (ledger/refunds/invoices; gateway is a mock until the owner picks one; no tax computed) |
 | 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ✅ Done (in-app + email; SMS/OTP deliberately not built — paid provider, owner decision) |
-| 12    | Admin & Legal Ops Dashboard   | User/advocate/RAG-source management, high-risk query review       | ⬜ Not started |
+| 12    | Admin & Legal Ops Dashboard   | User/advocate/RAG-source management, high-risk query review       | ✅ Done (UI in apps/web `/admin`; no audit trail until Phase 13) |
 | 13    | Security & Compliance         | Hardening: rate limiting, prompt-injection defence, audit logs, tenant isolation | ⬜ Not started |
 | 14    | Testing                       | Unit + integration + browser E2E coverage                        | 🟡 Scaffolding only |
 | 15    | Production Deployment          | Cloud hosting, managed Postgres/Redis, monitoring, CI/CD, backups | 🟡 Scaffolding only |
@@ -304,6 +304,29 @@ deliverable and builds on the previous one.
   verification at no cost. Reminders ("your consultation is in 1 hour") need a scheduler, which
   arrives with deployment in Phase 15.
   Rationale: [`docs/adr/0013`](adr/0013-notifications-in-app-and-email-outbox.md).
+
+## Phase 12 — what shipped
+
+- **Admin dashboard** at `/admin` in `apps/web` (role-gated, `ADMIN` / `LEGAL_ADMIN`; the server
+  re-checks every call): an **overview** of what needs attention (queries to review, advocates
+  awaiting verification, failed notification emails) plus breakdowns of users, advocates, matters,
+  the knowledge base and payments; **risk review**; **advocates** (verify / reject with a note - the
+  advocate is notified); **users** (search, suspend / reactivate); **matters** (read-only oversight);
+  **payments** (full or partial refund, the client is notified); **legal sources** (add by URL,
+  re-index, remove).
+- **High-risk query review** (`/api/v1/admin/reviews`): the HIGH / CRITICAL chat queries from Phase 5,
+  worst first, with the assistant's answer and how many sources grounded it. Reviewers see the
+  question, answer and classification but **never who asked**. Marking a query reviewed records who
+  and when (migration `0012_query_review`).
+- New API: `/admin/overview`, `/admin/matters`, `/admin/advocates` (all statuses, with name + email),
+  `/admin/reviews`, `?q=` search on `/admin/users`. An admin cannot suspend their own account.
+- **Bug found while verifying, fixed**: timestamps stored as naive UTC (`created_at`, `updated_at`)
+  were shown 5½ hours early in India on every screen since Phase 1, because they are serialised
+  without an offset and browsers read that as local time. Fixed in `formatDateTime` (both apps, with
+  a unit test). The root cause - naive `timestamp` columns - is recorded for Phase 13/15.
+- **Known gap**: no audit trail yet for admin actions or for reading chat content - `audit_logs` is
+  Phase 13. Not built: bulk actions, role changes in the UI, editing advocate profiles, uploading
+  a source file. Rationale: [`docs/adr/0014`](adr/0014-admin-and-legal-ops-dashboard.md).
 
 ## MVP scope (Phase 16)
 

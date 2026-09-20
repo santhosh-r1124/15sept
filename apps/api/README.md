@@ -58,7 +58,8 @@ app/
             ├── matter_documents.py  # document requests, file upload/download (Phase 9)
             ├── advocate_portal.py   # /advocates/me/dashboard + /earnings (Phase 9)
             ├── payments.py          # payment/invoice views, admin refunds (Phase 10)
-            └── notifications.py     # in-app feed, mark read, email preference (Phase 11)
+            ├── notifications.py     # in-app feed, mark read, email preference (Phase 11)
+            └── admin_ops.py         # overview, matters, advocate list, query review (Phase 12)
 ```
 
 ## Develop
@@ -264,6 +265,22 @@ Notifications are created by the routes that cause them - there is no create end
 Gmail/Outlook app-password works). A failed send stays PENDING in the `notifications` outbox;
 drain it from cron with `uv run python -m app.scripts.send_pending_emails`. Emails never include
 matter details. See [`docs/adr/0013`](../../docs/adr/0013-notifications-in-app-and-email-outbox.md).
+
+## Admin & legal ops (Phase 12)
+
+All ADMIN / LEGAL_ADMIN only. The dashboard UI is `/admin` in `apps/web`.
+
+| Method & path | Does |
+| --- | --- |
+| `GET /admin/overview` | Counts by role / status, payment totals, and what needs attention |
+| `GET /admin/reviews` | High-risk chat queries (`status=pending\|reviewed\|all`, `risk_level`), worst first |
+| `POST /admin/reviews/{message_id}/review` | Mark reviewed / amend the note (404 unless a HIGH/CRITICAL user message) |
+| `GET /admin/advocates?status=` | Every advocate profile with name + email (`/advocates/pending` is the older, anonymous shape) |
+| `GET /admin/matters?status=` | Read-only list of all matters |
+| `GET /admin/users?q=&role=` | Search users; `PATCH /admin/users/{id}` suspends (never yourself) |
+
+Review results carry the question, the answer and the classification, never the asker's identity.
+See [`docs/adr/0014`](../../docs/adr/0014-admin-and-legal-ops-dashboard.md).
 
 ## Migrations (Alembic)
 

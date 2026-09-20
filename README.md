@@ -8,14 +8,14 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> **Phases 0–11 are done**: foundation, authentication & RBAC, the legal
+> **Phases 0–12 are done**: foundation, authentication & RBAC, the legal
 > knowledge-base ingestion pipeline, production RAG (hybrid search +
 > grounded, cited chat answers), risk scoring (LOW/MEDIUM/HIGH/CRITICAL, with
 > an advocate recommendation on HIGH/CRITICAL), a document-drafting
 > assistant, advocate marketplace discovery, consultation booking, the advocate portal,
 > a payments ledger with refunds and invoices (the gateway is a mock until the owner picks a
-> provider), and in-app + email notifications — see the caveat below: no
-> bulk corpus is loaded yet, so most chat answers are currently "insufficient
+> provider), in-app + email notifications, and an admin & legal-ops dashboard — see the
+> caveat below: no bulk corpus is loaded yet, so most chat answers are currently "insufficient
 > evidence" until real sources are ingested. See
 > [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and status,
 > and [`docs/architecture.md`](docs/architecture.md) for the system design.
@@ -37,7 +37,7 @@ legal-platform/
 │   ├── document-processing/ # Phase 3 — real impl: apps/api/app/services/ingestion/
 │   ├── legal-classifier/    # Phase 5 — real impl: apps/api/app/services/legal_classifier.py
 │   ├── risk-engine/         # Phase 5 — real impl: apps/api/app/services/risk_engine.py
-│   └── notifications/       # Phase 11 — email / SMS / in-app fan-out
+│   └── notifications/       # Phase 11 — real impl: apps/api/app/services/notifications/
 ├── packages/                # Shared TypeScript packages
 │   ├── database/            # DB client + generated types (schema owned by apps/api)
 │   ├── auth/                # Shared auth types + token helpers

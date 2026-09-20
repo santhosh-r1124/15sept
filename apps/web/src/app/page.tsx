@@ -4,7 +4,6 @@ import { SystemStatus } from '@/components/system-status';
 import { env } from '@/lib/env';
 
 const PHASES = [
-  { n: 12, label: 'Admin & Legal Ops Dashboard' },
   { n: 13, label: 'Security & Compliance' },
 ];
 
@@ -13,7 +12,7 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-16">
       <header className="flex flex-col gap-2">
         <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-          Phase 11 · Chat, documents, advocates, bookings, payments &amp; notifications · {env.NEXT_PUBLIC_APP_ENV}
+          Phase 12 · Chat, documents, advocates, bookings, payments, notifications &amp; admin · {env.NEXT_PUBLIC_APP_ENV}
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">
           Indian Legal Advisor Bot &amp; Advocate Connect

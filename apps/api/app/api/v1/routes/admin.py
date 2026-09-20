@@ -12,10 +12,10 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.api.deps import DbSession, SettingsDep, require_roles
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError
 from app.models.user import AdvocateProfile, User, UserRole, VerificationStatus
 from app.schemas.admin import PaginatedAdvocateProfiles, PaginatedUsers, UserActiveUpdateRequest
 from app.schemas.advocate import AdvocateProfileOut, AdvocateRejectRequest, AdvocateVerifyRequest
@@ -35,6 +35,7 @@ async def list_users(
     _admin: AdminUser,
     db: DbSession,
     role: UserRole | None = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
     limit: Limit = 25,
     offset: Offset = 0,
 ) -> PaginatedUsers:
@@ -43,6 +44,15 @@ async def list_users(
     if role is not None:
         stmt = stmt.where(User.role == role)
         count_stmt = count_stmt.where(User.role == role)
+    if q:
+        # Substring match on email / name; escape LIKE wildcards so "100%" means 100%.
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        match = or_(
+            User.email.ilike(pattern, escape="\\"), User.display_name.ilike(pattern, escape="\\")
+        )
+        stmt = stmt.where(match)
+        count_stmt = count_stmt.where(match)
 
     total = (await db.execute(count_stmt)).scalar_one()
     rows = (
@@ -57,11 +67,14 @@ async def list_users(
 
 @router.patch("/users/{user_id}", response_model=UserOut, summary="Activate or suspend a user")
 async def set_user_active(
-    user_id: uuid.UUID, payload: UserActiveUpdateRequest, _admin: AdminUser, db: DbSession
+    user_id: uuid.UUID, payload: UserActiveUpdateRequest, admin: AdminUser, db: DbSession
 ) -> UserOut:
     user = await db.get(User, user_id)
     if user is None:
         raise NotFoundError("User not found.")
+    if user.id == admin.id and not payload.is_active:
+        # An admin suspending themselves would lock the last person who can undo it out.
+        raise ConflictError("You can't suspend your own account.", code="cannot_suspend_self")
     user.is_active = payload.is_active
     await db.commit()
     await db.refresh(user)
