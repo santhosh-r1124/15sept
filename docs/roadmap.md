@@ -13,7 +13,7 @@ deliverable and builds on the previous one.
 | 5     | Classification & Guardrails   | Legal category classifier + LOW/MEDIUM/HIGH/CRITICAL risk engine  | ✅ Done |
 | 6     | Document Assistant            | Consumer legal-document questionnaire + draft/template generation | ✅ Done |
 | 7     | Advocate Marketplace          | Advocate discovery with filters + profiles                       | ✅ Done |
-| 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ⬜ Not started |
+| 8     | On-Demand Consultation        | End-to-end booking → payment → consultation → matter closed      | ✅ Done (payment is a mock until Phase 10; no voice/video) |
 | 9     | Advocate Portal               | Advocate operating dashboard (requests, matters, docs, earnings)  | ⬜ Not started |
 | 10    | Payments                      | Consultation + document-service payments, refunds, invoices       | ⬜ Not started |
 | 11    | Notifications                 | Email / SMS / OTP / in-app across all lifecycle events            | ⬜ Not started |
@@ -205,6 +205,34 @@ deliverable and builds on the previous one.
 - Frontend: `apps/web` gets `/advocates` (filterable search) and
   `/advocates/[id]` (profile view) — read-only; booking a consultation is
   Phase 8, so the profile page says so rather than showing a dead button.
+
+## Phase 8 — what shipped
+
+- **Matters** (`/api/v1/matters`): a consumer books a verified advocate for a 15/30/60-minute
+  consultation or a document service (draft / review / modification / affidavit assistance /
+  agreement review). Lifecycle: `REQUESTED -> ACCEPTED -> PAID -> SCHEDULED -> CLOSED`, plus
+  `REJECTED` / `CANCELLED`. The rules live in one pure, exhaustively unit-tested state machine
+  (`app/services/matters/lifecycle.py`); illegal moves return 409, non-participants get 404.
+- **Quoting**: consultations are prefilled from the advocate's fee (treated as the 60-minute
+  price, prorated); the advocate confirms or overrides on accept, and document services must be
+  quoted by the advocate. The consumer pays only after seeing the quote.
+- **Payment is a stub**: a `PaymentProvider` interface plus a free mock that always succeeds and
+  is **refused in production**. The real Indian gateway is a Phase 10 decision that needs the
+  project owner's input (paid, regulated) — see
+  [`docs/adr/0010-matter-lifecycle-and-payments.md`](adr/0010-matter-lifecycle-and-payments.md).
+- **Messaging**: a per-matter thread between consumer and advocate (polled by the UI), read-only
+  once the matter ends. **Not shipped**: voice/video (needs WebRTC signalling/TURN + a provider
+  choice) and document upload/exchange (Phase 9, the advocate portal).
+- Frontend (`apps/web`): booking form on the advocate profile, `/matters`, `/matters/[id]` (status,
+  pay / cancel, message thread). The advocate-side UI for accept/schedule/close is Phase 9 — the
+  API actions already exist.
+- Migration `0008_matters`; `packages/shared/src/matter.ts` mirrors the enums.
+- Also new: `python -m app.scripts.seed_demo` (demo consumer/admin/advocates, refuses production)
+  and Docker-free local Postgres helpers in `apps/api/dev/` (see `apps/api/README.md`).
+- **Found while verifying against a real database for the first time**: chat had been broken since
+  Phase 2 (enum persisted as `USER` instead of `user`), the auth tests could never have passed
+  (`.test` emails rejected), and the DB test fixtures leaked event-loop-bound connections. All
+  fixed (commit `e06d949`); the suite went from "116 passed, 73 skipped" to all-real.
 
 ## MVP scope (Phase 16)
 

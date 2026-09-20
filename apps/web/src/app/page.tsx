@@ -4,9 +4,9 @@ import { SystemStatus } from '@/components/system-status';
 import { env } from '@/lib/env';
 
 const PHASES = [
-  { n: 8, label: 'On-Demand Consultation' },
   { n: 9, label: 'Advocate Portal' },
   { n: 10, label: 'Payments' },
+  { n: 11, label: 'Notifications' },
 ];
 
 export default function HomePage() {
@@ -14,7 +14,7 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-16">
       <header className="flex flex-col gap-2">
         <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-          Phase 7 · Chat, documents &amp; advocate marketplace · {env.NEXT_PUBLIC_APP_ENV}
+          Phase 8 · Chat, documents, advocates &amp; bookings · {env.NEXT_PUBLIC_APP_ENV}
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">
           Indian Legal Advisor Bot &amp; Advocate Connect

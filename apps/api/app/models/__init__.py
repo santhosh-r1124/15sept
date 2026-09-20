@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models.chat import ChatMessage, Conversation, MessageRole
 from app.models.document_request import AssistantDocumentType, DocumentRequest
 from app.models.legal_document import DocumentType, IngestionStatus, LegalChunk, LegalDocument
+from app.models.matter import Matter, MatterMessage, MatterServiceType, MatterStatus
 from app.models.user import (
     AdvocateProfile,
     EmailVerificationToken,
@@ -32,6 +33,10 @@ __all__ = [
     "IngestionStatus",
     "LegalChunk",
     "LegalDocument",
+    "Matter",
+    "MatterMessage",
+    "MatterServiceType",
+    "MatterStatus",
     "MessageRole",
     "PasswordResetToken",
     "RefreshToken",

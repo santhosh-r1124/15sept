@@ -23,9 +23,14 @@ export function SiteHeader() {
             Advocates
           </Link>
           {loading ? null : user ? (
-            <Link href="/profile" className="text-slate-600 hover:text-slate-900">
-              {user.display_name || user.email}
-            </Link>
+            <>
+              <Link href="/matters" className="text-slate-600 hover:text-slate-900">
+                My matters
+              </Link>
+              <Link href="/profile" className="text-slate-600 hover:text-slate-900">
+                {user.display_name || user.email}
+              </Link>
+            </>
           ) : (
             <>
               <Link href="/login" className="text-slate-600 hover:text-slate-900">

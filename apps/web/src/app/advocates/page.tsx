@@ -4,18 +4,12 @@ import { INDIAN_STATES, LEGAL_CATEGORIES, MANDATORY_DISCLAIMER } from '@legal-pl
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
+import { titleCase } from '@/lib/format';
 import {
   advocateClient,
   type AdvocateDirectoryEntry,
   type AdvocateSearchFilters,
 } from '@/lib/advocate-client';
-
-function formatCategoryLabel(category: string): string {
-  return category
-    .split('_')
-    .map((w) => w[0] + w.slice(1).toLowerCase())
-    .join(' ');
-}
 
 const EMPTY_FILTERS: AdvocateSearchFilters = {};
 
@@ -76,7 +70,7 @@ export default function AdvocatesPage() {
           <option value="">Any practice area</option>
           {LEGAL_CATEGORIES.filter((c) => c !== 'OUT_OF_SCOPE').map((c) => (
             <option key={c} value={c}>
-              {formatCategoryLabel(c)}
+              {titleCase(c)}
             </option>
           ))}
         </select>
@@ -134,7 +128,7 @@ export default function AdvocatesPage() {
                   </p>
                   {a.practice_areas.length > 0 && (
                     <p className="mt-1 text-xs text-slate-500">
-                      {a.practice_areas.map(formatCategoryLabel).join(', ')}
+                      {a.practice_areas.map(titleCase).join(', ')}
                     </p>
                   )}
                 </Link>

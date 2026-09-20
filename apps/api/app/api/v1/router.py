@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import admin, advocates, auth, chat, documents, legal_sources, meta, users
+from app.api.v1.routes import (
+    admin,
+    advocates,
+    auth,
+    chat,
+    documents,
+    legal_sources,
+    matters,
+    meta,
+    users,
+)
 
 api_router = APIRouter()
 api_router.include_router(meta.router, tags=["meta"])
@@ -17,3 +27,4 @@ api_router.include_router(
     legal_sources.router, prefix="/admin/legal-sources", tags=["legal-sources"]
 )
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
+api_router.include_router(matters.router, prefix="/matters", tags=["matters"])

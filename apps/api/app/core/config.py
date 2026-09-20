@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     ingestion_chunk_max_chars: int = 1500
     ingestion_chunk_overlap_chars: int = 200
 
+    # ---- Payments (Phase 8+) ----------------------------------------------
+    # "mock" always succeeds and is refused in production (app/services/payments).
+    # The real gateway is chosen in Phase 10.
+    payment_provider: str = "mock"
+
     # ---- Frontend (Phase 1+) ------------------------------------------
     # Base URL used to build links inside emails (verify-email, reset-password).
     frontend_base_url: str = "http://localhost:3000"

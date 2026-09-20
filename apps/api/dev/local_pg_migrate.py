@@ -8,6 +8,7 @@ app doesn't need them (``gen_random_uuid()`` is built in since PG13), so those t
 ``CREATE EXTENSION`` lines are skipped here (real Docker/Supabase Postgres has them).
 
     uv run python dev/local_pg_migrate.py            # DB name: legal_platform_test
+    uv run python dev/local_pg_migrate.py my_dev_db  # or any other name (recreated fresh!)
 
 Then run the suite with the printed DATABASE_URL, e.g.:
 
@@ -27,7 +28,7 @@ from urllib.parse import urlparse
 import asyncpg
 
 HERE = pathlib.Path(__file__).resolve().parent
-DB_NAME = "legal_platform_test"
+DB_NAME = sys.argv[1] if len(sys.argv) > 1 else "legal_platform_test"
 SKIP = ("pgcrypto", "pg_trgm")
 
 

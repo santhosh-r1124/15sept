@@ -33,6 +33,8 @@ app/
 │   ├── llm.py              # Claude: grounded answer generation (Phase 4)
 │   ├── ingestion/          # fetch/extract/clean/chunk/embed/search (Phase 3)
 │   ├── rag/                # hybrid search + Reciprocal Rank Fusion (Phase 4)
+│   ├── matters/            # lifecycle state machine + fee quoting (Phase 8)
+│   ├── payments/           # PaymentProvider interface + mock (Phase 8; gateway in Phase 10)
 │   └── document_assistant/ # questionnaire schema + draft generation (Phase 6)
 ├── scripts/
 │   └── create_admin.py    # CLI to bootstrap an ADMIN/LEGAL_ADMIN account
@@ -49,7 +51,8 @@ app/
             ├── admin.py      # user list/suspend, advocate verification queue (RBAC)
             ├── chat.py       # send message (anon or logged in), list/get conversations
             ├── legal_sources.py  # ingest/list/get/delete/reindex/search (RBAC)
-            └── documents.py  # document types/questions, generate/list/get drafts
+            ├── documents.py  # document types/questions, generate/list/get drafts
+            └── matters.py    # book an advocate, accept/pay/schedule/close, message thread
 ```
 
 ## Develop
@@ -178,6 +181,39 @@ internal moderation field) compared to the advocate's own
 filters aren't implemented — neither exists as real data until Phase 8
 introduces actual consultations.
 
+## Consultation booking (Phase 8)
+
+`app/api/v1/routes/matters.py` — a consumer books a verified advocate, the advocate accepts with
+a quote, the consumer pays, the advocate schedules (consultations) and closes:
+
+| Method & path | Does |
+| --- | --- |
+| `POST /matters` | Book (consumer/enterprise only; verified advocates only) |
+| `GET /matters` | Your matters — as consumer, or as the advocate they're assigned to |
+| `GET /matters/{id}` | One matter (participants + admins; everyone else 404) |
+| `POST /matters/{id}/accept` \| `reject` \| `cancel` \| `pay` \| `schedule` \| `close` | Lifecycle actions, gated by `services/matters/lifecycle.py` (illegal -> 409) |
+| `GET/POST /matters/{id}/messages` | Message thread (read-only after the matter ends) |
+
+Payment goes through `app/services/payments` — a mock provider until Phase 10, refused when
+`APP_ENV=production`. Rationale: [`docs/adr/0010`](../../docs/adr/0010-matter-lifecycle-and-payments.md).
+
+## Running the DB tests without Docker
+
+Docker Desktop is often unavailable; the DB-backed tests can run against an embedded
+PostgreSQL 16 + pgvector instead:
+
+```bash
+cd apps/api
+uv run --no-project --python 3.12 --with pgserver python dev/local_pg_start.py   # start (py3.12: pgserver has no 3.13 wheels)
+uv run python dev/local_pg_migrate.py                                            # fresh test DB + all migrations; prints DATABASE_URL
+DATABASE_URL=<printed url> uv run python -m pytest -q                            # every test runs, none skip
+uv run python dev/local_pg_migrate.py legal_platform_dev                         # optional: a dev DB...
+DATABASE_URL=<dev url> uv run python -m app.scripts.seed_demo                    # ...with demo accounts
+```
+
+`python -m alembic` / `python -m pytest` / `python -m uvicorn` are used because the `.exe`
+launchers can be blocked by Windows Application Control.
+
 ## Migrations (Alembic)
 
 ```bash
@@ -202,6 +238,7 @@ keyword half of hybrid search, plus `chat_messages.sources` (JSONB).
 `20260106_0000-0006_risk_level.py` adds `chat_messages.risk_level` (indexed).
 `20260107_0000-0007_document_requests.py` creates `document_requests`
 (+ `assistant_document_type` enum), same `create_type=False` pattern.
+`20260108_0000-0008_matters.py` creates `matters` + `matter_messages` (+ two enums).
 
 ## Testing
 

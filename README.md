@@ -8,11 +8,12 @@ The AI answers are **grounded in verified Indian legal sources via RAG**, not th
 LLM's parametric memory. For matters needing professional help, the platform
 routes users to a qualified advocate rather than acting as one.
 
-> **Phases 0–7 are done**: foundation, authentication & RBAC, the legal
+> **Phases 0–8 are done**: foundation, authentication & RBAC, the legal
 > knowledge-base ingestion pipeline, production RAG (hybrid search +
 > grounded, cited chat answers), risk scoring (LOW/MEDIUM/HIGH/CRITICAL, with
 > an advocate recommendation on HIGH/CRITICAL), a document-drafting
-> assistant, and advocate marketplace discovery — see the caveat below: no
+> assistant, advocate marketplace discovery, and consultation booking (payment is a mock
+> until Phase 10) — see the caveat below: no
 > bulk corpus is loaded yet, so most chat answers are currently "insufficient
 > evidence" until real sources are ingested. See
 > [`docs/roadmap.md`](docs/roadmap.md) for the full 16-phase plan and status,

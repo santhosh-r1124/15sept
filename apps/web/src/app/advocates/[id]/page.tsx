@@ -4,14 +4,9 @@ import { MANDATORY_DISCLAIMER } from '@legal-platform/shared';
 import Link from 'next/link';
 import { use, useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
+import { titleCase } from '@/lib/format';
+import { BookingForm } from '@/components/booking-form';
 import { advocateClient, type AdvocateDirectoryEntry } from '@/lib/advocate-client';
-
-function formatCategoryLabel(category: string): string {
-  return category
-    .split('_')
-    .map((w) => w[0] + w.slice(1).toLowerCase())
-    .join(' ');
-}
 
 export default function AdvocateProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -76,7 +71,10 @@ export default function AdvocateProfilePage({ params }: { params: Promise<{ id: 
             {advocate.consultation_fee && (
               <div>
                 <dt className="text-xs text-slate-400">Consultation fee</dt>
-                <dd className="text-slate-700">₹{advocate.consultation_fee}</dd>
+                <dd className="text-slate-700">
+                  ₹{advocate.consultation_fee}{' '}
+                  <span className="text-xs text-slate-400">per hour, prorated for 15/30 min</span>
+                </dd>
               </div>
             )}
             {advocate.languages.length > 0 && (
@@ -89,7 +87,7 @@ export default function AdvocateProfilePage({ params }: { params: Promise<{ id: 
               <div>
                 <dt className="text-xs text-slate-400">Practice areas</dt>
                 <dd className="text-slate-700">
-                  {advocate.practice_areas.map(formatCategoryLabel).join(', ')}
+                  {advocate.practice_areas.map(titleCase).join(', ')}
                 </dd>
               </div>
             )}
@@ -102,10 +100,7 @@ export default function AdvocateProfilePage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
-          <p className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-            On-demand consultation booking is coming soon — for now, this is a directory listing
-            only.
-          </p>
+          <BookingForm advocateId={advocate.id} />
         </div>
       )}
 

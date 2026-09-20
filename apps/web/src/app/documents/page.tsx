@@ -4,21 +4,12 @@ import { MANDATORY_DISCLAIMER } from '@legal-platform/shared';
 import { useEffect, useState } from 'react';
 import { ApiRequestError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { titleCase } from '@/lib/format';
 import {
   documentClient,
   type DocumentTypeInfoOut,
   type QuestionOut,
 } from '@/lib/document-client';
-
-// Acronyms that should stay all-caps rather than being title-cased.
-const ACRONYMS = new Set(['NDA']);
-
-function formatTypeLabel(documentType: string): string {
-  return documentType
-    .split('_')
-    .map((w) => (ACRONYMS.has(w) ? w : w[0] + w.slice(1).toLowerCase()))
-    .join(' ');
-}
 
 export default function DocumentsPage() {
   const { accessToken } = useAuth();
@@ -104,7 +95,7 @@ export default function DocumentsPage() {
             ← Choose a different document type
           </button>
           <h2 className="text-sm font-semibold text-slate-700">
-            {formatTypeLabel(selected.document_type)}
+            {titleCase(selected.document_type)}
           </h2>
           <div className="flex flex-col gap-3">
             {selected.questions.map((q: QuestionOut) => (
@@ -147,7 +138,7 @@ export default function DocumentsPage() {
                   onClick={() => selectType(info)}
                   className="rounded-lg border border-slate-300 px-3 py-3 text-left text-sm text-slate-700 hover:border-blue-500 hover:text-blue-700"
                 >
-                  {formatTypeLabel(info.document_type)}
+                  {titleCase(info.document_type)}
                 </button>
               ))}
             </div>

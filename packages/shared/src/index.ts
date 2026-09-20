@@ -11,3 +11,4 @@ export * from './roles';
 export * from './api';
 export * from './disclaimer';
 export * from './advocate';
+export * from './matter';

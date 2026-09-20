@@ -14,7 +14,7 @@ import json
 import pathlib
 import sys
 
-import pgserver
+import pgserver  # type: ignore[import-not-found]  # only in the throwaway py3.12 env
 
 HERE = pathlib.Path(__file__).resolve().parent
 PGDATA = pathlib.Path.home() / ".legal_platform_pgdata"
