@@ -107,7 +107,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build API image (runtime)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: apps/api
           target: runtime
@@ -116,7 +116,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
@@ -125,7 +125,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build advocate-portal image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/advocate-portal/Dockerfile
